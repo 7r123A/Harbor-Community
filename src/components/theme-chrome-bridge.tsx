@@ -27,6 +27,7 @@ import { useThemePreview } from "@/lib/theme-preview";
 
 const SCAN_MS = 1200;
 const STATUS_EVENT = "harbor:open-status-picker";
+const BIG_PICTURE_SLOT_FLAG = "data-harbor-bigpicture-slot";
 
 const STATUS_COLORS: Record<string, string> = {
   online: "var(--color-success, #22c55e)",
@@ -86,6 +87,8 @@ function syncUnreadSlots(count: number): void {
 
 function syncBigPictureSlots(offer: boolean): void {
   const slots = document.querySelectorAll<HTMLElement>("[data-harbor-bigpicture]");
+  // index.css hides Harbor's own entry button while a theme supplies one.
+  document.documentElement.toggleAttribute(BIG_PICTURE_SLOT_FLAG, slots.length > 0);
   for (const el of Array.from(slots)) {
     if (offer) el.removeAttribute("data-empty");
     else el.setAttribute("data-empty", "");
@@ -175,11 +178,19 @@ export function ThemeChromeBridge() {
 
   useEffect(() => syncAvatarSlots(avatarUrl), [avatarUrl]);
 
-  useEffect(() => syncBigPictureSlots(bpOffer), [bpOffer]);
+  // Also when the selected theme or the custom HTML changes, so the flag on <html> follows the new
+  // slots at once. Any other change of the markup is picked up by the scan below.
+  useEffect(
+    () => syncBigPictureSlots(bpOffer),
+    [bpOffer, settings.theme.preset, settings.customHtml],
+  );
 
   useEffect(() => {
     document.documentElement.setAttribute("data-harbor-bridge", "1");
-    return () => document.documentElement.removeAttribute("data-harbor-bridge");
+    return () => {
+      document.documentElement.removeAttribute("data-harbor-bridge");
+      document.documentElement.removeAttribute(BIG_PICTURE_SLOT_FLAG);
+    };
   }, []);
 
   useEffect(() => {

@@ -151,7 +151,14 @@ export function nativeSeasonRows(
   return visibleEpisodes.map((ep) => {
     if ((ep.imdbSeason ?? ep.seasonNumber) !== seasonHint) return ep;
     const native = byCoordinate.get(ep.imdbEpisode ?? ep.number);
-    return native && (!ep.imdbId || !native.imdbId || ep.imdbId === native.imdbId) ? native : ep;
+    if (!native || (ep.imdbId && native.imdbId && ep.imdbId !== native.imdbId)) return ep;
+    // Keep the selected provider row's presentation coordinates while taking
+    // playback, metadata and watched identity from its canonical native row.
+    return {
+      ...native,
+      displayNumber: ep.displayNumber,
+      displaySeason: ep.displaySeason,
+    };
   });
 }
 

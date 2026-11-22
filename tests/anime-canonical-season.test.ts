@@ -49,6 +49,8 @@ test("catalog cards use the native progress owner and airdate for the same provi
   const { nativeSeasonRows } = load();
   const catalog = {
     number: 8,
+    displayNumber: 8,
+    displaySeason: 2,
     imdbEpisode: 8,
     imdbSeason: 2,
     imdbId: "tt1",
@@ -56,7 +58,12 @@ test("catalog cards use the native progress owner and airdate for the same provi
   };
   const native = { ...catalog, number: 3, sourceMetaId: "kitsu:17", airdate: "2026-11-17" };
   const unrelated = { ...catalog, imdbId: "tt2" };
-  assert.deepEqual(nativeSeasonRows([catalog, unrelated], [native], 2), [native, unrelated]);
+  const [resolved, untouched] = nativeSeasonRows([catalog, unrelated], [native], 2);
+  assert.equal(resolved.number, 3, "playback keeps the native episode number");
+  assert.equal(resolved.sourceMetaId, "kitsu:17", "identity comes from the native owner");
+  assert.equal(resolved.displayNumber, 8, "the selected ordering controls the card number");
+  assert.equal(resolved.displaySeason, 2, "the selected ordering controls the season");
+  assert.equal(untouched, unrelated, "unmatched episodes retain their original row");
 });
 
 

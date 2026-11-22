@@ -367,7 +367,13 @@ export const AnimeEpisodes = memo(function AnimeEpisodes({
       if (season != null && season > 0) return season;
     }
     return null;
-  }, [tvdbActiveSeason, tvdbPanel.panel, effectiveOrder?.visibleEpisodes, episodes]);
+  }, [
+    tvdbActiveSeason,
+    tvdbPanel.panel?.activeType,
+    tvdbPanel.panel?.visibleEpisodes,
+    effectiveOrder?.visibleEpisodes,
+    episodes,
+  ]);
   const premiereEntry = useMemo(() => {
     if (
       tvdbPanel.panel?.activeType !== "aired" ||

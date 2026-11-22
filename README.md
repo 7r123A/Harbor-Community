@@ -251,7 +251,7 @@ A native libmpv player, with HLS and MPEG-TS engines for live and broadcast sour
 | Capability          | Detail                                                                                                                                                                                                                                                                                                                               |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | **Engines**         | Native libmpv (bundled) or HTML5/WebView2, with an Auto mode; hls.js and mpegts.js for live; embedded or separate window mpv                                                                                                                                                                                                         |
-| **Resilience**      | Auto retry and auto advance that detect black screens, frozen positions, and hard stalls; fallback to the Stremio Server HLS transcoder on a decode error; automatic live IPTV reconnect                                                                                                                                             |
+| **Resilience**      | Auto retry and auto advance that detect black screens, frozen positions, and hard stalls; HLS transcoding fallback after a decode error when server transcoding is enabled and a Stremio-compatible remote streaming server is configured; automatic live IPTV reconnect                                                                                                                                             |
 | **Picture**         | HDR passthrough, HDR to SDR tonemapping (bt.2446a), Anime4K GLSL upscaling shaders, a stats overlay                                                                                                                                                                                                                                  |
 | **Skip segments**   | Intro, outro, and recap detection from AniSkip, TheIntroDB, and embedded chapter markers                                                                                                                                                                                                                                             |
 | **Subtitles**       | OpenSubtitles v3 and Wyzie plus your subtitle addons, deduped and language ranked; SRT/VTT/ASS/SUB with encoding detection; **dual tracks**; full styling (font, size, color, outline, box, margin, alignment, custom font upload); SDH and forced flags; ASS override; per item delay; and a show/hide toggle in picture in picture |
@@ -517,7 +517,8 @@ flowchart TD
   subgraph Shell["Tauri 2 Rust shell"]
     Player["libmpv player"]
     Cast["Cast server (DLNA / Chromecast / AirPlay / Roku)"]
-    Sidecars["Sidecars: stremio-server, yt-dlp"]
+    Engine["Native Rust torrent engine (librqbit)"]
+    Sidecars["Sidecars: yt-dlp, ffmpeg, ffprobe"]
   end
 
   subgraph Net["Open ecosystem and services"]
@@ -550,7 +551,8 @@ flowchart TD
 - **Stream core:** `harbor-core`, a pure Rust crate compiled to WASM and rlib
 - **Player:** native libmpv, with hls.js and mpegts.js for live
 - **Casting:** a bundled Rust cast server plus a web cast receiver
-- **Sidecars:** `stremio-server`, `yt-dlp`
+- **Torrent engine:** native Rust, using `librqbit`
+- **Sidecars:** `yt-dlp`, `ffmpeg`, `ffprobe`
 
 **Repo layout**
 

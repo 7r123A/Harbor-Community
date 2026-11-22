@@ -585,7 +585,7 @@ export const AnimeEpisodes = memo(function AnimeEpisodes({
       return unratedDisplay;
     if (!tvdbPanel.panel && !activeIsAnchor) return unratedDisplay;
     return nativeSeasonRows(unratedDisplay, nativeSeason.episodes, nativeSeason.season);
-  }, [nativeSeason, meta.id, seasonHint, unratedDisplay, tvdbPanel.panel, activeIsAnchor]);
+  }, [nativeSeason, meta.id, seasonHint, unratedDisplay, Boolean(tvdbPanel.panel), activeIsAnchor]);
   const ratingOwner = selectedRows[0]?.sourceMetaId ?? meta.id;
   const baseDisplay = useMemo(
     () =>

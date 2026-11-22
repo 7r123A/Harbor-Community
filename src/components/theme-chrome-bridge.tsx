@@ -21,6 +21,7 @@ import {
 } from "@/lib/social/presence";
 import { getUnreadCount, subscribeUnread } from "@/lib/social/unread-bridge";
 import { activeLayout } from "@/lib/theme";
+import { runBlockedHarborCall } from "@/lib/theme-markup-calls";
 import { useBigPictureEntry } from "@/chrome/use-big-picture-entry";
 import { useThemePreview } from "@/lib/theme-preview";
 
@@ -225,6 +226,19 @@ export function ThemeChromeBridge() {
     };
     document.addEventListener("click", onClick, true);
     return () => document.removeEventListener("click", onClick, true);
+  }, []);
+
+  // An inline handler runs at its element, after capture handlers, and not at all once the click was
+  // stopped on the way. A bubble listener on document keeps that order for the handlers the CSP blocks.
+  useEffect(() => {
+    // The node CustomCodeMount renders next to this component, not just any element with its id.
+    const markup = document.getElementById("harbor-custom-overlay");
+    if (!markup) return;
+    const onClick = (e: MouseEvent) => {
+      if (e.target instanceof Element) runBlockedHarborCall(e.target, markup);
+    };
+    document.addEventListener("click", onClick);
+    return () => document.removeEventListener("click", onClick);
   }, []);
 
   useEffect(() => {

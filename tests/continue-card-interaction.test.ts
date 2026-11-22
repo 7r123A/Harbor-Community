@@ -14,6 +14,7 @@ function harness(
     settings?: Record<string, unknown>;
     item?: Record<string, unknown>;
     seasonEpisodes?: unknown[];
+    localCw?: Record<string, unknown>;
   } = {},
 ) {
   const dom = new JSDOM("<!doctype html><body><div id='app'></div>", { url: "http://localhost/" });
@@ -194,7 +195,10 @@ function harness(
     "@/lib/cw-dismiss": {
       isCwDismissed: (item: any) => removed.some((entry) => entry._id === item._id),
     },
-    "@/lib/local-cw": { localCwEntry: () => ({}) },
+    "@/lib/local-cw": opts.localCw ?? {
+      localCwEntry: () => ({}),
+      localCwEntryMerged: () => ({}),
+    },
     "@/lib/manual-watched": { isManualWatchedDismissed: () => false },
     "@/lib/active-profile-id": { isNuvioProviderActive: () => false },
   };
@@ -775,13 +779,17 @@ test("a hydration reset without a key change re-resolves the cour", async () => 
   }
 });
 
-
 test("a repaired anime card plays the verified native stream while resuming its original source", async () => {
   const source = {
-    _id: "mal:14719", type: "series", name: "JoJo's Bizarre Adventure (2012)",
+    _id: "mal:14719",
+    type: "series",
+    name: "JoJo's Bizarre Adventure (2012)",
     state: {
-      season: 6, episode: 1, video_id: "kitsu:49847:1",
-      timeOffset: 240_000, duration: 1_440_000,
+      season: 6,
+      episode: 1,
+      video_id: "kitsu:49847:1",
+      timeOffset: 240_000,
+      duration: 1_440_000,
     },
   };
   const card = {
@@ -823,15 +831,21 @@ test("a repaired anime card plays the verified native stream while resuming its 
 
 test("an offline repaired IMDb catalog card uses the verified native stream but keeps catalog resume", async () => {
   const source = {
-    _id: "tt2359704", type: "series", name: "JoJo's Bizarre Adventure",
+    _id: "tt2359704",
+    type: "series",
+    name: "JoJo's Bizarre Adventure",
     isAnime: true,
     state: {
-      season: 6, episode: 1, video_id: "tt2359704:6:1",
-      timeOffset: 360_000, duration: 1_440_000,
+      season: 6,
+      episode: 1,
+      video_id: "tt2359704:6:1",
+      timeOffset: 360_000,
+      duration: 1_440_000,
     },
   };
   const card = {
-    ...source, _id: "kitsu:49847",
+    ...source,
+    _id: "kitsu:49847",
     cwRepairSourceId: source._id,
     cwRepairNativeStreamId: "kitsu:49847:1",
     cwMembers: [source],
@@ -854,15 +868,21 @@ test("an offline repaired IMDb catalog card uses the verified native stream but 
 
 test("split-cour repairs preserve original provider episode 13 for resume and native episode 1 for trackers", async () => {
   const source = {
-    _id: "tt13706018", type: "series", name: "Spy x Family",
+    _id: "tt13706018",
+    type: "series",
+    name: "Spy x Family",
     isAnime: true,
     state: {
-      season: 1, episode: 13, video_id: "tt13706018:1:13",
-      timeOffset: 480_000, duration: 1_440_000,
+      season: 1,
+      episode: 13,
+      video_id: "tt13706018:1:13",
+      timeOffset: 480_000,
+      duration: 1_440_000,
     },
   };
   const card = {
-    ...source, _id: "kitsu:45619",
+    ...source,
+    _id: "kitsu:45619",
     cwRepairSourceId: source._id,
     cwRepairNativeStreamId: "kitsu:45619:1",
     cwMembers: [source],
@@ -879,6 +899,132 @@ test("split-cour repairs preserve original provider episode 13 for resume and na
     assert.equal(request.episode.kitsuStreamId, "kitsu:45619:1");
     assert.equal(request.episode.sourceMetaId, "kitsu:45619");
     assert.deepEqual(h.playbackQueries.at(-1), ["tt13706018", 1, 13]);
+  } finally {
+    await h.dispose();
+  }
+});
+
+// The real local store module over a fake localStorage, so a card is checked against the same
+// two stores (shared and the profile's private one) the pages build their rows from.
+function realLocalCw(
+  stores: { shared?: string[]; private?: string[] },
+  scope: { privateOnly?: boolean } = {},
+) {
+  const data = new Map<string, string>();
+  const checkpoints = (ids: string[] = []) =>
+    JSON.stringify(
+      Object.fromEntries(
+        ids.map((id) => [
+          id,
+          {
+            id,
+            type: "series",
+            name: id,
+            season: 1,
+            episode: 16,
+            positionMs: 60000,
+            durationMs: 1400000,
+            t: 1,
+          },
+        ]),
+      ),
+    );
+  data.set("harbor.localcw.v1.fixture-a", checkpoints(stores.shared));
+  data.set("harbor.localcw.private.v1.fixture-a", checkpoints(stores.private));
+  const storage = {
+    getItem: (key: string) => data.get(key) ?? null,
+    setItem: (key: string, value: string) => data.set(key, value),
+    removeItem: (key: string) => data.delete(key),
+  };
+  const output = ts.transpileModule(
+    readFileSync(new URL("../src/lib/local-cw.ts", import.meta.url), "utf8"),
+    { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } },
+  ).outputText;
+  const exports = {} as any;
+  new Function("require", "exports", "localStorage", "window", output)(
+    (name: string) => {
+      if (name === "./cw-profile")
+        return {
+          privateCwProfileId: () => (scope.privateOnly ? "fixture-a" : null),
+          cwProfileScope: () => ({
+            profileId: "fixture-a",
+            sharedId: "fixture-a",
+            private: !!scope.privateOnly,
+          }),
+        };
+      if (name === "./active-profile-id")
+        return { isNuvioProviderActive: () => false, getNuvioActiveSlot: () => 1 };
+      throw new Error(`Unexpected dependency ${name}`);
+    },
+    exports,
+    storage,
+    { addEventListener: () => {} },
+  );
+  return exports;
+}
+
+const localCard = {
+  _id: "tt-local",
+  type: "series",
+  name: "Local Show",
+  local: true,
+  state: {
+    season: 1,
+    episode: 16,
+    video_id: "tt-local:1:16",
+    duration: 1400000,
+    timeOffset: 60000,
+  },
+};
+
+test("a local card listed from the profile's private store plays and keeps its menu", async () => {
+  // Playback saves a cloud-capable title to the private store only, and the pages list that store
+  // too. The card has to find the checkpoint where the page found it.
+  const localCw = realLocalCw({ private: ["tt-local"] });
+  assert.deepEqual(
+    localCw.listLocalCwMerged(false).map((entry: any) => entry.id),
+    ["tt-local"],
+    "the page lists the private checkpoint",
+  );
+  const h = harness(null, { item: localCard, localCw });
+  try {
+    await h.render();
+    await h.context("button[title='Play']");
+    assert.equal(h.target.isValid(), true, "the right-click menu belongs to a live entry");
+    await h.click("button[title='Play']");
+    assert.equal(h.starts.length, 1, "Play starts playback");
+    assert.equal(h.starts[0].meta.id, "tt-local");
+    assert.deepEqual(h.starts[0].mode, { autoPlay: true, resume: true });
+    await React.act(() => h.target.primary.actions()[0].run());
+    assert.deepEqual(h.starts.at(-1).mode, { autoPlay: false, resume: false });
+  } finally {
+    await h.dispose();
+  }
+});
+
+test("a local card whose checkpoint is in neither store stays refused", async () => {
+  const h = harness(null, { item: localCard, localCw: realLocalCw({}) });
+  try {
+    await h.render();
+    await h.context("button[title='Play']");
+    assert.equal(h.target.isValid(), false);
+    await h.click("button[title='Play']");
+    assert.equal(h.starts.length, 0);
+  } finally {
+    await h.dispose();
+  }
+});
+
+test("a private scope does not accept a checkpoint that only the shared store holds", async () => {
+  const localCw = realLocalCw({ shared: ["tt-local"] }, { privateOnly: true });
+  assert.deepEqual(localCw.listLocalCwMerged(true), [], "a private scope does not list it either");
+  const h = harness(null, { item: localCard, localCw });
+  try {
+    await h.render();
+    await h.context("button[title='Play']");
+    assert.equal(h.target.isValid(), false);
+    await h.click("button[title='Play']");
+    assert.equal(h.starts.length, 0);
   } finally {
     await h.dispose();
   }

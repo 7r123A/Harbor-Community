@@ -49,10 +49,12 @@ export function CustomCodeMount() {
   const themeJs = themeExt?.js ?? "";
   // The theme with HTML or a script that is active. Without one, the markup is the user's own.
   const codeOwner = themeExt?.html || themeJs ? settings.theme.preset : null;
+  const script = codeOwner ? themeJs : settings.customJs;
   // React assigns innerHTML again whenever this object is a new one, even for an unchanged string.
   // Keeping it stable leaves the theme's nodes, their state and their listeners in place. Another
-  // theme starts on new nodes even for the same HTML: the old ones carry what the last one left.
-  const overlayHtml = useMemo(() => ({ __html: html }), [html, codeOwner]);
+  // theme and a new script start on new nodes even for the same HTML: the old ones carry what the
+  // last script left.
+  const overlayHtml = useMemo(() => ({ __html: html }), [html, codeOwner, script]);
 
   // Markup that was just swapped in has no mark for the current view yet, and the view did not
   // change. Declared before the script effects, so a script finds the mark when it starts.

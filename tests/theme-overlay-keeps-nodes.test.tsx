@@ -355,3 +355,82 @@ test("the user's own HTML stays in place while looks without HTML and script are
     await f.close();
   }
 });
+
+test("a store update that brings a new script starts it on new nodes", async () => {
+  const saved: Look = { ...rail(), js: listens("old") };
+  const f = await fixture([saved]);
+  try {
+    const before = homeButton();
+    saved.js = listens("new");
+    await f.libraryChanged();
+    homeButton().click();
+    assert.deepEqual(f.heard, ["new"], "the old script's listener must be gone");
+    assert.notEqual(homeButton(), before, "the button must be a new node");
+  } finally {
+    await f.close();
+  }
+});
+
+test("a store update keeps the look's nodes when the old script had taken them along", async () => {
+  const saved: Look = { ...rail(), js: movesRail("old") };
+  const f = await fixture([saved]);
+  try {
+    assert.deepEqual(railParents(), ["BODY"]);
+    saved.js = movesRail("new");
+    await f.libraryChanged();
+    assert.deepEqual(railParents(), ["BODY"], "one rail, the one the new script took");
+  } finally {
+    await f.close();
+  }
+});
+
+test("a change in the library that leaves the look's HTML and script alone leaves its nodes alone", async () => {
+  const saved: Look = {
+    ...rail(),
+    js: `${listens("click")}
+      window.__harborThemeCleanup = () => window.heard.push("cleanup");`,
+  };
+  const looks = [saved];
+  const f = await fixture(looks);
+  try {
+    const before = homeButton();
+    // The active look is stored anew with other CSS, and another one is saved.
+    looks[0] = { ...saved, css: ".look { color: red; }" };
+    looks.push(dock());
+    await f.libraryChanged();
+    assert.equal(homeButton(), before);
+    before.click();
+    assert.deepEqual(f.heard, ["click"], "its script goes on as it was");
+  } finally {
+    await f.close();
+  }
+});
+
+test("the user's own script starts on new nodes when it changes", async () => {
+  const f = await fixture([{ id: "cool-grey", css: "", js: "", html: "" }]);
+  const own = { customHtml: railHtml, customJs: listens("old") };
+  try {
+    f.state.settings = { ...f.state.settings, ...own };
+    await f.render();
+    f.state.settings = { ...f.state.settings, customJs: listens("new") };
+    await f.render();
+    homeButton().click();
+    assert.deepEqual(f.heard, ["new"], "the old script's listener must be gone");
+  } finally {
+    await f.close();
+  }
+});
+
+test("a change of the user's own script leaves the nodes of a look alone", async () => {
+  const f = await fixture([{ ...rail(), js: listens("look") }]);
+  try {
+    const before = homeButton();
+    f.state.settings = { ...f.state.settings, customJs: "void 0;" };
+    await f.render();
+    assert.equal(homeButton(), before);
+    before.click();
+    assert.deepEqual(f.heard, ["look"], "nobody starts the look's script again");
+  } finally {
+    await f.close();
+  }
+});

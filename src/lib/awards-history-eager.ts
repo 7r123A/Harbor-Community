@@ -13,7 +13,8 @@ import { setBundledAwards } from "./awards-history";
 // A rejection is left for main.tsx to record as a boot fallback. Without the table there are no
 // bundled award marks, award pages or award-winner rows; live lookups still work. If the table
 // only arrives after main.tsx stopped waiting, readers that subscribe or compute later pick it
-// up, while award pages and rows computed in the gap stay empty until the next start.
+// up, the winners feed among them, while award pages computed in the gap stay empty until the
+// next start.
 export const bundledAwardsReady: Promise<void> = import("@/data/awards.json").then((table) =>
   setBundledAwards(table.default),
 );

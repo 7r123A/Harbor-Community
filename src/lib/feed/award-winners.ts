@@ -1,6 +1,6 @@
 import type { Meta } from "@/lib/cinemeta";
 import type { AwardCategory } from "@/lib/awards-catalog";
-import { readAwardHistory } from "@/lib/awards-history";
+import { bundledAwardsVersion, readAwardHistory } from "@/lib/awards-history";
 import { tmdbSearchMovie } from "@/lib/providers/tmdb";
 import type { AwardType } from "@/lib/providers/wikidata";
 import { HARBOR_API_BASE } from "@/lib/config/endpoints";
@@ -75,6 +75,9 @@ async function resolveAll(tmdbKey: string): Promise<Meta[]> {
     memo = cached;
     return cached;
   }
+  // The award table can arrive after the app has started (awards-history-eager). Until then no
+  // winner is known, and an empty list kept as the answer would last until the next start.
+  if (bundledAwardsVersion() === 0) return [];
   if (inflight) return inflight;
   inflight = (async () => {
     const titles = winnerTitles();

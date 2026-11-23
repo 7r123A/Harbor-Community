@@ -26,7 +26,12 @@ export function MangaPosterRow({
   if (items && items.length === 0) return null;
 
   return (
-    <Row min={min} shape="portrait" scrollKey={scrollKey} alwaysActive={alwaysActive}>
+    <Row
+      min={min}
+      shape="portrait"
+      scrollKey={scrollKey}
+      alwaysActive={alwaysActive || items === null}
+    >
       {items === null
         ? Array.from({ length: 8 }).map((_, i) => (
             <div key={i} className="w-full animate-pulse motion-reduce:animate-none">

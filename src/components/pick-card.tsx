@@ -1,6 +1,6 @@
 import { ScoreStack } from "./card-score-stack";
 import { Bookmark, Check } from "lucide-react";
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { TopTenRibbon } from "@/components/top-ten-ribbon";
 import { meta as fetchMeta, narrowMediaType, type Meta } from "@/lib/cinemeta";
 import { useContextMenu, type MembershipContext } from "@/lib/context-menu";
@@ -29,6 +29,7 @@ import { observe, observeSettled } from "@/lib/visibility";
 import { createRequestScheduler } from "@/lib/request-scheduler";
 import { LocalDot } from "@/components/local-badge";
 import { Poster, useLocalizedPoster } from "./poster";
+import { RowCardWidthContext } from "./row";
 import { FriendReviewBadges } from "@/components/ratings/friend-review-badges";
 import { useHoverRatingPrefetch } from "@/lib/social/hover-rating-prefetch";
 import { useProfiledEffect } from "./profiled";
@@ -118,6 +119,7 @@ const PosterCard = memo(function PosterCard({
   const openMangaTarget = (m: Meta) => (onOpenManga ? onOpenManga(m) : openManga(m.id));
   const { open: openContextMenu } = useContextMenu();
   const { settings } = useSettings();
+  const rowCardWidth = useContext(RowCardWidthContext);
   const ref = useRef<HTMLButtonElement>(null);
   const expandingCard = useExpandingCard({
     cardRef: ref,
@@ -563,6 +565,7 @@ const PosterCard = memo(function PosterCard({
           lowResImdb={imdbId}
           ratio="portrait"
           lazy="release"
+          cardWidth={rowCardWidth ?? undefined}
           onError={advancePoster}
           className={`harbor-card-ring rounded-[var(--poster-radius,12px)] shadow-[0_2px_8px_-2px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.06)] transition-[box-shadow] duration-300 group-hover:shadow-[0_24px_48px_-14px_rgba(0,0,0,0.65),inset_0_1px_0_rgba(255,255,255,0.08)] ${
             customProps ? customProps.className : cardHoverPosterClass(inCardHover)

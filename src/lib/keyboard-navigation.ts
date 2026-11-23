@@ -1380,6 +1380,10 @@ export function useKeyboardNavigation(options: TVNavigationOptions = {}) {
         // Always swallow Back/Escape so WebView/OS never treat it as close-app.
         e.preventDefault();
         e.stopPropagation();
+        // A held key repeats keydown. Once the first press closes the top layer
+        // (e.g. player chat history), a repeat would fall through to leaving
+        // the player. The player's own shortcut handler ignores repeats too.
+        if (e.repeat) return;
         runBack();
         return;
       }

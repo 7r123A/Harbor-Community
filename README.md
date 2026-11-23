@@ -216,8 +216,8 @@ parse  ->  trust  ->  score  ->  rank
 | Stage     | What happens                                                                                                                                                                                                                                                                                                       |
 | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | **Parse** | Extracts resolution, HDR flavor (Dolby Vision, HDR10, HDR10+, HLG), video codec, source type, audio codec and channel layout (Atmos, TrueHD, DTS-HD MA, 5.1/7.1), languages, file size, seeders, container, release group, edition tags, season/episode, and an anime aware filename pass for CRC and batch ranges |
-| **Trust** | Filters dead links, placeholders, low quality sources, trailers and extras, undersized files, and title, year, season, or episode mismatches using metadata and source reliability signals |
-| **Score** | Weighs availability, resolution, HDR, audio quality, source reliability, and preferred language matches; penalizes mismatches and implausible sizes. Every signal is recorded so the reason is inspectable |
+| **Trust** | Filters dead links, placeholders, low quality sources, trailers and extras, undersized files, and title, year, season, or episode mismatches using metadata and source reliability signals                                                                                                                         |
+| **Score** | Weighs availability, resolution, HDR, audio quality, source reliability, and preferred language matches; penalizes mismatches and implausible sizes. Every signal is recorded so the reason is inspectable                                                                                                         |
 | **Rank**  | Sorts into quality tiers (4K DV, 4K HDR, 4K, 1080p HDR, 1080p, 720p, SD) and surfaces the best cached pick first, with partial results streamed to the UI as addons respond                                                                                                                                        |
 
 Optional debrid integrations support **Real-Debrid, AllDebrid, Premiumize, Debrid-Link, and TorBox**. Harbor checks availability through your configured services and reads cache metadata supplied by addons. These services are not required to play local files or supported streams. All keys stay on your device. Use connected services only for content you are authorized to access.
@@ -251,7 +251,7 @@ A native libmpv player, with HLS and MPEG-TS engines for live and broadcast sour
 | Capability          | Detail                                                                                                                                                                                                                                                                                                                               |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | **Engines**         | Native libmpv (bundled) or HTML5/WebView2, with an Auto mode; hls.js and mpegts.js for live; embedded or separate window mpv                                                                                                                                                                                                         |
-| **Resilience**      | Auto retry and auto advance that detect black screens, frozen positions, and hard stalls; fallback to the Stremio Server HLS transcoder on a decode error; automatic live IPTV reconnect                                                                                                                                             |
+| **Resilience**      | Auto retry and auto advance that detect black screens, frozen positions, and hard stalls; HLS transcoding fallback after a decode error when server transcoding is enabled and a Stremio-compatible remote streaming server is configured; automatic live IPTV reconnect                                                             |
 | **Picture**         | HDR passthrough, HDR to SDR tonemapping (bt.2446a), Anime4K GLSL upscaling shaders, a stats overlay                                                                                                                                                                                                                                  |
 | **Skip segments**   | Intro, outro, and recap detection from AniSkip, TheIntroDB, and embedded chapter markers                                                                                                                                                                                                                                             |
 | **Subtitles**       | OpenSubtitles v3 and Wyzie plus your subtitle addons, deduped and language ranked; SRT/VTT/ASS/SUB with encoding detection; **dual tracks**; full styling (font, size, color, outline, box, margin, alignment, custom font upload); SDH and forced flags; ASS override; per item delay; and a show/hide toggle in picture in picture |
@@ -347,7 +347,7 @@ Harbor's theme engine changes more than colors. A theme can reshape the entire n
 | **Kitsu / AniZip**  | Anime metadata, cross database ID mapping, and per episode detail                                                                                                                                                                 |
 | **Trakt**           | OAuth device sign in, automatic scrobbling, watchlist and history, personalized movie and series recommendations, an Up Next calendar rail, and your avatar in the sidebar                                                        |
 | **Stremio**         | Account sign in, Continue Watching sync, installed-addon collection sync, and catalog, meta, stream, and subtitle resources from every installed addon                                                                            |
-| **Debrid**          | Optional Real-Debrid, AllDebrid, Premiumize, Debrid-Link, and TorBox integrations for availability checks and playback through your configured account |
+| **Debrid**          | Optional Real-Debrid, AllDebrid, Premiumize, Debrid-Link, and TorBox integrations for availability checks and playback through your configured account                                                                            |
 
 Awards laurels surface across detail pages, covering Oscar, Emmy, BAFTA, Golden Globe, SAG, Cannes, Berlin, Critics Choice, and Annie/Kobe honors.
 
@@ -405,11 +405,11 @@ Harbor is built to keep your data on your machine.
 
 Download the latest build for macOS or Windows from the [Releases page](https://github.com/HarborCommunity/Harbor/releases), use the [unofficial Linux packages](https://github.com/Thunderhawkk/harbor-linux), or open Harbor in your browser.
 
-| Platform    | Format                                                                                                   |
-| ----------- | -------------------------------------------------------------------------------------------------------- |
-| **macOS**   | `.dmg` (macOS 15.0 or newer, Apple silicon)                                                              |
-| **Windows** | Harbor Shipyard installer (current user install), or `winget install HarborStremio.Harbor`               |
-| **Web**     | Open in any modern browser, nothing to install                                                           |
+| Platform    | Format                                                                                          |
+| ----------- | ----------------------------------------------------------------------------------------------- |
+| **macOS**   | `.dmg` (macOS 15.0 or newer, Apple silicon)                                                     |
+| **Windows** | Harbor Shipyard installer (current user install), or `winget install HarborStremio.Harbor`      |
+| **Web**     | Open in any modern browser, nothing to install                                                  |
 | **Linux**   | [Unofficial `.deb`, `.rpm`, and Flatpak packages](https://github.com/Thunderhawkk/harbor-linux) |
 
 > [!NOTE]
@@ -517,7 +517,8 @@ flowchart TD
   subgraph Shell["Tauri 2 Rust shell"]
     Player["libmpv player"]
     Cast["Cast server (DLNA / Chromecast / AirPlay / Roku)"]
-    Sidecars["Sidecars: stremio-server, yt-dlp"]
+    Engine["Native Rust torrent engine (librqbit)"]
+    Sidecars["Sidecars: yt-dlp, ffmpeg, ffprobe"]
   end
 
   subgraph Net["Open ecosystem and services"]
@@ -550,7 +551,8 @@ flowchart TD
 - **Stream core:** `harbor-core`, a pure Rust crate compiled to WASM and rlib
 - **Player:** native libmpv, with hls.js and mpegts.js for live
 - **Casting:** a bundled Rust cast server plus a web cast receiver
-- **Sidecars:** `stremio-server`, `yt-dlp`
+- **Torrent engine:** native Rust, using `librqbit`
+- **Sidecars:** `yt-dlp`, `ffmpeg`, `ffprobe`
 
 **Repo layout**
 

@@ -130,6 +130,7 @@ import { PlayerInteractionLockControls } from "@/components/player/player-intera
 import { usePlayerInteractionLock } from "./player/hooks/use-player-interaction-lock";
 import { isNextAired } from "@/lib/cw-resurface";
 import { exitAnyFullscreen } from "@/lib/fullscreen-state";
+import { dismissChatHistory } from "@/lib/together/chat-history-dismiss";
 
 let hdrFallbackNoticeShown = false;
 
@@ -673,6 +674,7 @@ function NativePlayerView({ src }: { src: PlayerSrc }) {
   useEffect(() => {
     const onLocalBack = (e: Event) => {
       e.preventDefault();
+      if (dismissChatHistory()) return;
       void backFromPlayer();
     };
     window.addEventListener("harbor:local-back", onLocalBack);
@@ -687,6 +689,7 @@ function NativePlayerView({ src }: { src: PlayerSrc }) {
     wrap: true,
     arrows: chromeVisible && !pipMode,
     onBack: () => {
+      if (dismissChatHistory()) return true;
       void backFromPlayer();
       return true;
     },

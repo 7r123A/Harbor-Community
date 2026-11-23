@@ -34,6 +34,9 @@ const sync: Record<string, string> = {
   "Every collection": "Jede Sammlung",
   "First anchor": "Erster Anker",
   "Guests pick their own source": "Gäste wählen ihre Quelle selbst",
+  "Chat history": "Chatverlauf",
+  "Keep chat history open": "Chatverlauf geöffnet lassen",
+  "Shows earlier messages over the video": "Zeigt frühere Nachrichten über dem Video",
   Guided: "Geführt",
   "Harbor's public relay has not rolled out the latest protocol yet.":
     "Das öffentliche Relay von Harbor unterstützt das neueste Protokoll noch nicht.",

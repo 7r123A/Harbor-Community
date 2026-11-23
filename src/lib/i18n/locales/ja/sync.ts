@@ -25,6 +25,9 @@ const sync: Record<string, string> = {
   Message: "メッセージ",
   Send: "送信",
   "Guests pick their own source": "ゲストが自分でソースを選ぶ",
+  "Chat history": "チャット履歴",
+  "Keep chat history open": "チャット履歴を開いたままにする",
+  "Shows earlier messages over the video": "以前のメッセージを動画の上に表示します",
   "Prompts guests to choose instead of auto-matching": "自動で照合せず、ゲストに選択を求めます",
   "Harbor's public relay has not rolled out the latest protocol yet.":
     "Harborの公開リレーには、まだ最新のプロトコルが導入されていません。",

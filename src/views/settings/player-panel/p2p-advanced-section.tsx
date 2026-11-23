@@ -18,6 +18,8 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { useSettings } from "@/lib/settings";
 import { useT } from "@/lib/i18n";
+import { copyText } from "@/lib/clipboard-text";
+import { directTorrentEnabled, localTorrentAllowed, torrentsDisabled } from "@/lib/torrent/stremio-stream";
 import {
   torrentEngineHardReset,
   torrentEngineSetOptions,
@@ -283,26 +285,49 @@ export function P2PPowerToolsSection() {
   const { settings, update, torrentEnginePolicyPending, torrentEnginePolicyError } = useSettings();
   const t = useT();
   const strictRemote = !!settings.remoteStreamServerUrl && settings.remoteStreamServerStrict;
-  const [copied, setCopied] = useState(false);
+  const [copyState, setCopyState] = useState<"idle" | "copying" | "copied" | "failed">("idle");
+  const [manualDiagnostics, setManualDiagnostics] = useState<string | null>(null);
   const [opening, setOpening] = useState(false);
   const cachePath = useCachePath(settings.streamCacheDir);
 
+  useEffect(() => {
+    if (copyState !== "copied") return;
+    const timer = window.setTimeout(() => setCopyState("idle"), 1800);
+    return () => window.clearTimeout(timer);
+  }, [copyState]);
+
   const copyDiagnostics = async () => {
-    const status = await torrentEngineStatus();
-    const diag = {
-      engine: status,
-      directTorrentStream: settings.directTorrentStream,
-      p2pAutoConsent: settings.p2pAutoConsent,
-      remoteStreamServerUrl: settings.remoteStreamServerUrl || null,
-      remoteStreamServerStrict: settings.remoteStreamServerStrict,
-      userAgent: navigator.userAgent,
-    };
+    if (copyState === "copying") return;
+    setCopyState("copying");
     try {
-      await navigator.clipboard.writeText(JSON.stringify(diag, null, 2));
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1600);
-    } catch {
-      /* clipboard blocked */
+      const status = await torrentEngineStatus().catch(() => null);
+      const diag = {
+        engine: status,
+        directTorrentStream: settings.directTorrentStream,
+        torrentsDisabled: settings.torrentsDisabled,
+        playbackPolicy: {
+          directTorrentEnabled: directTorrentEnabled(),
+          localTorrentAllowed: localTorrentAllowed(),
+          torrentsDisabled: torrentsDisabled(),
+        },
+        p2pAutoConsent: settings.p2pAutoConsent,
+        remoteStreamServerUrl: settings.remoteStreamServerUrl || null,
+        remoteStreamServerStrict: settings.remoteStreamServerStrict,
+        userAgent: navigator.userAgent,
+      };
+      const text = JSON.stringify(diag, null, 2);
+      // macOS WebKit can reject navigator.clipboard after the async engine
+      // status lookup. Use Harbor's native Tauri clipboard path instead.
+      if (!(await copyText(text))) {
+        setManualDiagnostics(text);
+        setCopyState("failed");
+        return;
+      }
+      setManualDiagnostics(null);
+      setCopyState("copied");
+    } catch (error) {
+      console.warn("[p2p] could not build diagnostics", error);
+      setCopyState("failed");
     }
   };
 
@@ -385,14 +410,32 @@ export function P2PPowerToolsSection() {
           tip={t(
             "Copy diagnostics grabs the engine status and your P2P settings as JSON, handy to paste into a bug report. The engine folder holds the DHT cache (dht.json) and active transfer data.",
           )}
+          warn={
+            copyState === "failed"
+              ? manualDiagnostics !== null
+                ? t("Could not copy diagnostics to the clipboard. Select and copy them manually.")
+                : t("Could not collect P2P diagnostics. Try again.")
+              : undefined
+          }
         >
-          <button type="button" onClick={() => void copyDiagnostics()} className={ROW_ACTION}>
-            {copied ? (
+          <button
+            type="button"
+            onClick={() => void copyDiagnostics()}
+            disabled={copyState === "copying"}
+            className={ROW_ACTION}
+          >
+            {copyState === "copied" ? (
               <Check size={16} strokeWidth={2.6} className="text-success" />
+            ) : copyState === "copying" ? (
+              <Loader2 size={16} className="animate-spin" />
             ) : (
               <ClipboardCopy size={16} strokeWidth={2.2} />
             )}
-            {copied ? t("Copied") : t("Copy diagnostics")}
+            {copyState === "copied"
+              ? t("Copied")
+              : copyState === "copying"
+                ? t("Copying...")
+                : t("Copy diagnostics")}
           </button>
         </SettingRow>
 
@@ -418,6 +461,25 @@ export function P2PPowerToolsSection() {
           </SettingRow>
         )}
       </SettingGroup>
+      <SettingsModal
+        open={manualDiagnostics !== null}
+        onClose={() => setManualDiagnostics(null)}
+        title={t("P2P diagnostics")}
+        sub={t("Clipboard access was blocked. Select the JSON below and copy it manually.")}
+        actions={
+          <ModalButton ghost onClick={() => setManualDiagnostics(null)}>
+            {t("Done")}
+          </ModalButton>
+        }
+      >
+        <textarea
+          aria-label={t("P2P diagnostics JSON")}
+          readOnly
+          value={manualDiagnostics ?? ""}
+          onFocus={(event) => event.currentTarget.select()}
+          className="min-h-[220px] w-full resize-y rounded-lg bg-canvas px-3 py-3 font-mono text-xs text-ink"
+        />
+      </SettingsModal>
     </Section>
   );
 }

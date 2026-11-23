@@ -39,6 +39,18 @@ export function loadEffective(profileId: string, linked: boolean): Settings {
   return loadStoredSettings(key);
 }
 
+/** Lightweight read for playback policy outside React. The mirror may
+ * belong to another profile or be stale; follow the same precedence as
+ * loadEffective() without parsing the complete settings object. */
+export function readActiveSettingsRaw(): string | null {
+  const { profileId, linked } = readActiveSource();
+  return (
+    localStorage.getItem(sourceKeyFor(profileId, linked)) ??
+    localStorage.getItem(SHARED_KEY) ??
+    localStorage.getItem(MIRROR_KEY)
+  );
+}
+
 export function recoverableLegacyBlob(): string | null {
   return localStorage.getItem(SHARED_KEY) ?? localStorage.getItem(MIRROR_KEY);
 }

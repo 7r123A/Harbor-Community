@@ -1,3 +1,4 @@
+import { readActiveSettingsRaw } from "@/lib/settings/profile-store";
 import {
   DEFAULT_BUNDLED_PORT,
   getStremioServerUrl,
@@ -137,7 +138,7 @@ function fileName(f: RawFile): string {
 
 export function localTorrentAllowed(): boolean {
   try {
-    const raw = localStorage.getItem("harbor.settings");
+    const raw = readActiveSettingsRaw();
     if (!raw) return true;
     return (JSON.parse(raw) as { directTorrentStream?: boolean }).directTorrentStream !== false;
   } catch {
@@ -147,7 +148,7 @@ export function localTorrentAllowed(): boolean {
 
 export function torrentsDisabled(): boolean {
   try {
-    const raw = localStorage.getItem("harbor.settings");
+    const raw = readActiveSettingsRaw();
     if (!raw) return false;
     return (JSON.parse(raw) as { torrentsDisabled?: boolean }).torrentsDisabled === true;
   } catch {

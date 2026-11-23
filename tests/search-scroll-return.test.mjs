@@ -86,7 +86,10 @@ function searchHarness() {
           : { currentResults: null },
     },
     "@/lib/torrent/magnet": { isMagnetInput: () => false, isDirectVideoUrl: () => false },
-    "@/lib/features/install": { useInstallFeatures: () => ({ games: false }) },
+    "@/lib/features/install": {
+      useInstallFeatures: () => ({ games: false }),
+      useInstallFeaturesReady: () => true,
+    },
   };
   const source = readFileSync(
     new URL("../src/components/search/search-overlay.tsx", import.meta.url),

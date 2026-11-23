@@ -21,11 +21,16 @@ import {
 } from "@/lib/social/presence";
 import { getUnreadCount, subscribeUnread } from "@/lib/social/unread-bridge";
 import { activeLayout } from "@/lib/theme";
+import { runBlockedHarborCall } from "@/lib/theme-markup-calls";
 import { useBigPictureEntry } from "@/chrome/use-big-picture-entry";
 import { useThemePreview } from "@/lib/theme-preview";
 
 const SCAN_MS = 1200;
 const STATUS_EVENT = "harbor:open-status-picker";
+const BIG_PICTURE_SLOT = "[data-harbor-bigpicture]";
+const BIG_PICTURE_SLOT_FLAG = "data-harbor-bigpicture-slot";
+// The nodes theme markup lives in: the active theme's and the Theme Studio's draft.
+const MARKUP_IDS = ["harbor-custom-overlay", "harbor-studio-preview-html"];
 
 const STATUS_COLORS: Record<string, string> = {
   online: "var(--color-success, #22c55e)",
@@ -84,11 +89,29 @@ function syncUnreadSlots(count: number): void {
 }
 
 function syncBigPictureSlots(offer: boolean): void {
-  const slots = document.querySelectorAll<HTMLElement>("[data-harbor-bigpicture]");
+  const slots = document.querySelectorAll<HTMLElement>(BIG_PICTURE_SLOT);
+  // index.css hides Harbor's own entry button while a theme supplies one.
+  document.documentElement.toggleAttribute(BIG_PICTURE_SLOT_FLAG, slots.length > 0);
   for (const el of Array.from(slots)) {
     if (offer) el.removeAttribute("data-empty");
     else el.setAttribute("data-empty", "");
   }
+}
+
+function holdsBigPictureSlot(nodes: NodeList): boolean {
+  return Array.from(nodes).some(
+    (node) =>
+      node instanceof Element &&
+      (node.matches(BIG_PICTURE_SLOT) || node.querySelector(BIG_PICTURE_SLOT) !== null),
+  );
+}
+
+function changesBigPictureSlots(record: MutationRecord): boolean {
+  return (
+    record.type === "attributes" ||
+    holdsBigPictureSlot(record.addedNodes) ||
+    holdsBigPictureSlot(record.removedNodes)
+  );
 }
 
 type HarborApi = { search?: () => void; bigPicture?: () => void };
@@ -174,11 +197,39 @@ export function ThemeChromeBridge() {
 
   useEffect(() => syncAvatarSlots(avatarUrl), [avatarUrl]);
 
-  useEffect(() => syncBigPictureSlots(bpOffer), [bpOffer]);
+  // Also when the selected theme or the custom HTML changes, so the flag on <html> follows the new
+  // slots at once.
+  useEffect(
+    () => syncBigPictureSlots(bpOffer),
+    [bpOffer, settings.theme.preset, settings.customHtml],
+  );
+
+  // A slot can come or go without that: with a store update, by a theme script, in the draft of the
+  // Theme Studio. One that is not in the theme's markup is picked up by the scan below.
+  const previewing = preview !== null;
+  useEffect(() => {
+    const observer = new MutationObserver((records) => {
+      if (records.some(changesBigPictureSlots)) syncBigPictureSlots(bpOfferRef.current);
+    });
+    for (const id of MARKUP_IDS) {
+      const markup = document.getElementById(id);
+      if (!markup) continue;
+      observer.observe(markup, {
+        subtree: true,
+        childList: true,
+        attributeFilter: ["data-harbor-bigpicture"],
+      });
+    }
+    syncBigPictureSlots(bpOfferRef.current);
+    return () => observer.disconnect();
+  }, [previewing]);
 
   useEffect(() => {
     document.documentElement.setAttribute("data-harbor-bridge", "1");
-    return () => document.documentElement.removeAttribute("data-harbor-bridge");
+    return () => {
+      document.documentElement.removeAttribute("data-harbor-bridge");
+      document.documentElement.removeAttribute(BIG_PICTURE_SLOT_FLAG);
+    };
   }, []);
 
   useEffect(() => {
@@ -225,6 +276,19 @@ export function ThemeChromeBridge() {
     };
     document.addEventListener("click", onClick, true);
     return () => document.removeEventListener("click", onClick, true);
+  }, []);
+
+  // An inline handler runs at its element, after capture handlers, and not at all once the click was
+  // stopped on the way. A bubble listener on document keeps that order for the handlers the CSP blocks.
+  useEffect(() => {
+    // The node CustomCodeMount renders next to this component, not just any element with its id.
+    const markup = document.getElementById("harbor-custom-overlay");
+    if (!markup) return;
+    const onClick = (e: MouseEvent) => {
+      if (e.target instanceof Element) runBlockedHarborCall(e.target, markup);
+    };
+    document.addEventListener("click", onClick);
+    return () => document.removeEventListener("click", onClick);
   }, []);
 
   useEffect(() => {

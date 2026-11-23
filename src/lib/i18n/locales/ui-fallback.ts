@@ -3625,6 +3625,15 @@ const uiFallback: Record<string, string> = {
     "Licence texts for bundled software and attribution notices for external data sources. Select any entry to save a copy.",
   "Add up to {n} screenshots to show your theme in action. Screenshots are optional.":
     "Add up to {n} screenshots to show your theme in action. Screenshots are optional.",
+  // P2P diagnostics use the shared English fallback until translations are available.
+  "Could not copy diagnostics to the clipboard. Select and copy them manually.":
+    "Could not copy diagnostics to the clipboard. Select and copy them manually.",
+  "Could not collect P2P diagnostics. Try again.": "Could not collect P2P diagnostics. Try again.",
+  "Copying...": "Copying...",
+  "P2P diagnostics": "P2P diagnostics",
+  "Clipboard access was blocked. Select the JSON below and copy it manually.":
+    "Clipboard access was blocked. Select the JSON below and copy it manually.",
+  "P2P diagnostics JSON": "P2P diagnostics JSON",
 };
 
 export default uiFallback;

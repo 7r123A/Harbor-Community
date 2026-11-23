@@ -1,7 +1,9 @@
 import { lastPlayedEpisode } from "@/lib/resume";
 import { getAnimeCwId } from "@/lib/anime-cw-ids";
 import {
-  nativeSeasonRows, nativeSeasonOwnerId, verifiedSeasonOwnerFromEpisodes,
+  nativeSeasonRows,
+  nativeSeasonOwnerId,
+  verifiedSeasonOwnerFromEpisodes,
 } from "./anime-episodes/anime-season-key";
 import { matchingKitsuSeasonEntry } from "./anime-episodes/anime-season-lookup";
 import {
@@ -367,7 +369,13 @@ export const AnimeEpisodes = memo(function AnimeEpisodes({
       if (season != null && season > 0) return season;
     }
     return null;
-  }, [tvdbActiveSeason, tvdbPanel.panel, effectiveOrder?.visibleEpisodes, episodes]);
+  }, [
+    tvdbActiveSeason,
+    tvdbPanel.panel?.activeType,
+    tvdbPanel.panel?.visibleEpisodes,
+    effectiveOrder?.visibleEpisodes,
+    episodes,
+  ]);
   const premiereEntry = useMemo(() => {
     if (
       tvdbPanel.panel?.activeType !== "aired" ||
@@ -409,7 +417,12 @@ export const AnimeEpisodes = memo(function AnimeEpisodes({
         if (!cancelled)
           setSearchedSeason({
             key,
-            id: matchingKitsuSeasonEntry(hits, meta.name, tvdbActiveSeason.name, tvdbActiveSeason.year),
+            id: matchingKitsuSeasonEntry(
+              hits,
+              meta.name,
+              tvdbActiveSeason.name,
+              tvdbActiveSeason.year,
+            ),
           });
       })
       .catch(() => {
@@ -418,12 +431,22 @@ export const AnimeEpisodes = memo(function AnimeEpisodes({
     return () => {
       cancelled = true;
     };
-  }, [needsSeasonLookup, seasonLookupKey, tvdbActiveSeason?.name, tvdbActiveSeason?.year, meta.name]);
+  }, [
+    needsSeasonLookup,
+    seasonLookupKey,
+    tvdbActiveSeason?.name,
+    tvdbActiveSeason?.year,
+    meta.name,
+  ]);
   const searchedSeasonId = searchedSeason?.key === seasonLookupKey ? searchedSeason.id : null;
   const searchedSeasonEntry = useMemo(
     () =>
       searchedSeasonId
-        ? { id: searchedSeasonId, type: "series" as const, name: `${meta.name}: ${tvdbActiveSeason?.name}` }
+        ? {
+            id: searchedSeasonId,
+            type: "series" as const,
+            name: `${meta.name}: ${tvdbActiveSeason?.name}`,
+          }
         : null,
     [searchedSeasonId, meta.name, tvdbActiveSeason?.name],
   );
@@ -449,8 +472,7 @@ export const AnimeEpisodes = memo(function AnimeEpisodes({
         if (cancelled || !rows.length || selectedEntry.id !== `kitsu:${id}`) return;
         // A candidate from resume, search, or premiere metadata is not the
         // tracker owner until its actual episodes match the selected show.
-        if (!rows.some((ep) => ep.imdbId === imdbId && ep.imdbSeason === seasonHint))
-          return;
+        if (!rows.some((ep) => ep.imdbId === imdbId && ep.imdbSeason === seasonHint)) return;
         setNativeSeason({
           page: meta.id,
           season: seasonHint,
@@ -485,8 +507,10 @@ export const AnimeEpisodes = memo(function AnimeEpisodes({
       .then(async (owner) => {
         const id = owner && parseKitsuId(owner.id);
         if (cancelled || id == null) return;
-        if (owner?.id === meta.id &&
-            episodes.some((ep) => ep.imdbId === imdbId && ep.imdbSeason === seasonHint)) {
+        if (
+          owner?.id === meta.id &&
+          episodes.some((ep) => ep.imdbId === imdbId && ep.imdbSeason === seasonHint)
+        ) {
           if (!cancelled) setNativeSeason({ page: meta.id, season: seasonHint, episodes });
           return;
         }
@@ -585,7 +609,7 @@ export const AnimeEpisodes = memo(function AnimeEpisodes({
       return unratedDisplay;
     if (!tvdbPanel.panel && !activeIsAnchor) return unratedDisplay;
     return nativeSeasonRows(unratedDisplay, nativeSeason.episodes, nativeSeason.season);
-  }, [nativeSeason, meta.id, seasonHint, unratedDisplay, tvdbPanel.panel, activeIsAnchor]);
+  }, [nativeSeason, meta.id, seasonHint, unratedDisplay, Boolean(tvdbPanel.panel), activeIsAnchor]);
   const ratingOwner = selectedRows[0]?.sourceMetaId ?? meta.id;
   const baseDisplay = useMemo(
     () =>
@@ -692,14 +716,18 @@ export const AnimeEpisodes = memo(function AnimeEpisodes({
     !activeIsAnchor ||
     Boolean(tvdbPanel.panel && seasonHint != null && seasonHint !== (entrySeason ?? 1));
   const nativeOwner = nativeSeasonOwnerId(nativeSeason, meta.id, seasonHint);
-  const verifiedNativeOwner = nativeOwner &&
-    verifiedSeasonOwnerFromEpisodes(nativeSeason?.episodes ?? [], imdbId, seasonHint) === nativeOwner
-      ? nativeOwner : null;
+  const verifiedNativeOwner =
+    nativeOwner &&
+    verifiedSeasonOwnerFromEpisodes(nativeSeason?.episodes ?? [], imdbId, seasonHint) ===
+      nativeOwner
+      ? nativeOwner
+      : null;
   const verifiedDisplayOwner = verifiedSeasonOwnerFromEpisodes(displayEpisodes, imdbId, seasonHint);
   const selectedCanonicalEntryId = tvdbPanel.panel
-    ? (verifiedNativeOwner ?? verifiedDisplayOwner ??
-       (requiresSeasonOwner ? null : displaySourceId ?? activeEntryId))
-    : displaySourceId ?? (activeIsAnchor ? null : activeEntryId);
+    ? (verifiedNativeOwner ??
+      verifiedDisplayOwner ??
+      (requiresSeasonOwner ? null : (displaySourceId ?? activeEntryId)))
+    : (displaySourceId ?? (activeIsAnchor ? null : activeEntryId));
   useEffect(() => {
     onCanonicalEntry?.(selectedCanonicalEntryId, requiresSeasonOwner);
   }, [selectedCanonicalEntryId, requiresSeasonOwner, onCanonicalEntry]);

@@ -11,6 +11,7 @@ import {
   useRef,
   useState,
   type ReactNode,
+  type RefObject,
 } from "react";
 import { observeResize, observeWithin } from "@/lib/visibility";
 import { isScrollActive } from "@/lib/scroll-activity";
@@ -33,19 +34,31 @@ function columnSpan(value?: string): number {
 const NEAR_MARGIN = "300px";
 const PAGE_MARGIN = "800px 0px";
 const FAR_RELEASE_MS = 15000;
+const RESIZE_SETTLE_MS = 150;
 // Mounts and artwork updates compete for the same scroll frame. At rest the queue
 // can fill more cards at once.
 const CARD_UPDATES_DURING_SCROLL = 1;
 const CARD_UPDATES_AT_REST = 6;
-const pendingCardUpdates = new Set<() => void>();
+const pendingCardUpdates = new Map<() => void, RefObject<boolean> | undefined>();
 let cardUpdateFrame: number | undefined;
+
+// Cards of rows on screen go first, then updates that name no row, then cards that are only prepared.
+function nextCardUpdate(prepare: boolean): (() => void) | undefined {
+  let other: (() => void) | undefined;
+  for (const [update, rowOnScreen] of pendingCardUpdates) {
+    if (rowOnScreen?.current) return update;
+    if (!rowOnScreen) other ??= update;
+  }
+  return other ?? (prepare ? pendingCardUpdates.keys().next().value : undefined);
+}
 
 function updateQueuedCards() {
   cardUpdateFrame = undefined;
   const perFrame = isScrollActive() ? CARD_UPDATES_DURING_SCROLL : CARD_UPDATES_AT_REST;
   startTransition(() => {
     for (let i = 0; i < perFrame; i++) {
-      const update = pendingCardUpdates.values().next().value;
+      // A prepared card gets a frame of its own, so that it holds up nothing the user looks at.
+      const update = nextCardUpdate(i === 0);
       if (!update) break;
       pendingCardUpdates.delete(update);
       update();
@@ -54,8 +67,11 @@ function updateQueuedCards() {
   if (pendingCardUpdates.size) cardUpdateFrame ??= requestAnimationFrame(updateQueuedCards);
 }
 
-export function queueRowCardUpdate(update: () => void): () => void {
-  pendingCardUpdates.add(update);
+export function queueRowCardUpdate(
+  update: () => void,
+  rowOnScreen?: RefObject<boolean>,
+): () => void {
+  pendingCardUpdates.set(update, rowOnScreen);
   cardUpdateFrame ??= requestAnimationFrame(updateQueuedCards);
   return () => {
     pendingCardUpdates.delete(update);
@@ -84,7 +100,16 @@ export function usePosterRow(min = 144, kids = false): { min: number; shape: Row
     : { min, shape: "portrait" };
 }
 
+// A theme can give the track columns of its own. Without a fixed width nobody can say what it shows.
+function trackColumn(track: HTMLElement | null, cellWidth: number): number | null {
+  const own = track ? getComputedStyle(track).gridAutoColumns : undefined;
+  if (!own || own === "auto") return cellWidth;
+  return /^[\d.]+px$/.test(own) ? parseFloat(own) : null;
+}
+
 const RowTrackContext = createContext<HTMLDivElement | null>(null);
+/** Width a card has in its row, for a card the row shows. Known before the row is on screen. */
+export const RowCardWidthContext = createContext<number | null>(null);
 export const ScrollRootContext = createContext<
   HTMLElement | React.RefObject<HTMLElement | null> | null
 >(null);
@@ -102,6 +127,12 @@ function LazyChild({
   children,
   eager,
   active,
+  measured,
+  column,
+  columns,
+  shownWidth,
+  isSkipped,
+  rowOnScreen,
   shape,
   span,
   expansion,
@@ -109,6 +140,12 @@ function LazyChild({
   children: ReactNode;
   eager: boolean;
   active: boolean;
+  measured: boolean;
+  column: number;
+  columns: number;
+  shownWidth: (column: number, columns: number, rendered?: boolean) => number | null;
+  isSkipped: (now?: boolean) => boolean;
+  rowOnScreen: RefObject<boolean>;
   shape: RowShape;
   span?: string;
   expansion?: {
@@ -122,6 +159,7 @@ function LazyChild({
 }) {
   const root = useContext(RowTrackContext);
   const [visible, setVisible] = useState(eager);
+  const [cardWidth, setCardWidth] = useState<number | null>(null);
   const mounted = useRef(eager);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -149,23 +187,42 @@ function LazyChild({
       return cancelRelease;
     }
     let cancelMount: (() => void) | undefined;
+    let rendered = false;
     const mount = () => {
       cancelMount = undefined;
       mounted.current = true;
+      // Arrow keys find the cards a row shows, not the ones it prepares.
+      el.toggleAttribute("data-tv-skip", !rendered);
+      setCardWidth(shownWidth(column, columns, rendered));
       setVisible(true);
     };
+    const queueMount = () => {
+      cancelMount?.();
+      cancelMount = queueRowCardUpdate(mount, rowOnScreen);
+    };
+    // content-visibility skips a near row until it is on screen, and an observer in a skipped row
+    // sees nothing. Waiting for it would build the cards the row shows in front of the user.
+    if (measured && !mounted.current && isSkipped() && shownWidth(column, columns) !== null)
+      queueMount();
     const stop = observeWithin(
       el,
       NEAR_MARGIN,
       (entry) => {
-        if (!entry.isIntersecting) {
+        rendered = entry.isIntersecting;
+        if (!rendered) {
+          if (isSkipped(true) && shownWidth(column, columns) !== null) {
+            // The row is skipped. Its cards get prepared all the same, after what is queued by now.
+            if (cancelMount) queueMount();
+            return;
+          }
           cancelMount?.();
           cancelMount = undefined;
           release();
           return;
         }
         cancelRelease();
-        if (!mounted.current) cancelMount ??= queueRowCardUpdate(mount);
+        el.removeAttribute("data-tv-skip");
+        if (!mounted.current && !cancelMount) queueMount();
       },
       root,
     );
@@ -174,7 +231,7 @@ function LazyChild({
       cancelMount?.();
       cancelRelease();
     };
-  }, [root, eager, active]);
+  }, [root, eager, active, measured, column, columns, shownWidth, isSkipped, rowOnScreen]);
 
   return (
     <div
@@ -199,19 +256,21 @@ function LazyChild({
       }
     >
       {eager || visible ? (
-        expansion ? (
-          <RowCardExpansionProvider
-            index={expansion.index}
-            enabled
-            expanded={expansion.expanded}
-            onExpand={expansion.onExpand}
-            onCollapse={expansion.onCollapse}
-          >
-            {children}
-          </RowCardExpansionProvider>
-        ) : (
-          children
-        )
+        <RowCardWidthContext.Provider value={cardWidth}>
+          {expansion ? (
+            <RowCardExpansionProvider
+              index={expansion.index}
+              enabled
+              expanded={expansion.expanded}
+              onExpand={expansion.onExpand}
+              onCollapse={expansion.onCollapse}
+            >
+              {children}
+            </RowCardExpansionProvider>
+          ) : (
+            children
+          )}
+        </RowCardWidthContext.Provider>
       ) : (
         <RowSkeletonCard shape={shape} />
       )}
@@ -343,27 +402,51 @@ export function Row({
 
   const [near, setNear] = useState(false);
   const nearRef = useRef(false);
+  const onScreenRef = useRef(false);
+  const skippedRef = useRef<boolean | null>(null);
+  const columnRef = useRef<{ cellWidth: number; px: number | null } | null>(null);
   useEffect(() => {
     const el = shellRef.current;
     if (!el) return;
-    return observeWithin(
+    const root = resolveRowScrollRoot(pageScrollRoot, el);
+    const stopNear = observeWithin(
       el,
       PAGE_MARGIN,
       (entry) => {
         nearRef.current = entry.isIntersecting;
+        columnRef.current = null;
+        skippedRef.current = null;
         startTransition(() => setNear(entry.isIntersecting));
       },
-      resolveRowScrollRoot(pageScrollRoot, el),
+      root,
     );
+    const stopOnScreen = observeWithin(
+      el,
+      "0px",
+      (entry) => {
+        onScreenRef.current = entry.isIntersecting;
+      },
+      root,
+    );
+    return () => {
+      stopNear();
+      stopOnScreen();
+    };
   }, [pageScrollRoot]);
   const measuredRef = useRef({ width: 0, effMin: 0 });
   // Width reported by the ResizeObserver for this row's container, so the measurement below does
   // not need a forced layout read.
   const observedWidthRef = useRef(0);
+  // The shell is as wide, and it is laid out while the browser still skips the container.
+  const shellWidthRef = useRef(0);
+  const cellWidthRef = useRef<number | null>(null);
   const measure = () => {
     const container = containerRef.current;
     if (!container) return;
-    const available = observedWidthRef.current;
+    // Placeholders wait for their container: a saved sideways position belongs to the cards to come.
+    const available = alwaysActive
+      ? observedWidthRef.current
+      : shellWidthRef.current || observedWidthRef.current;
     if (available <= 0) return;
     // The ResizeObserver also fires when the track's height changes, which is posters loading, not
     // a width change. Re-deriving the cell width then wrote the same value and re-laid-out the
@@ -374,9 +457,32 @@ export function Row({
     const fits = Math.max(1, Math.floor((available + GAP) / (effMin + GAP)));
     const raw = (available - (fits - 1) * GAP) / fits;
     const next = (Math.ceil(raw * 64) + 1) / 64;
-    batchWrite(() => setCellWidth(next));
+    batchWrite(() => {
+      cellWidthRef.current = next;
+      setCellWidth(next);
+    });
   };
   const lastScrollPosRef = useRef(0);
+  // The width of a cell the row shows at its current offset, null for the others. Needs no layout.
+  const shownWidth = useCallback((column: number, columns: number, rendered = false) => {
+    const cellWidth = cellWidthRef.current;
+    if (cellWidth === null) return null;
+    if (rendered || columnRef.current?.cellWidth !== cellWidth)
+      columnRef.current = { cellWidth, px: trackColumn(trackRef.current, cellWidth) };
+    const px = columnRef.current.px;
+    if (px === null) return null;
+    const stride = px + GAP;
+    const left = column * stride - lastScrollPosRef.current;
+    const width = columns * stride - GAP;
+    return left < measuredRef.current.width && left + width > 0 ? width : null;
+  }, []);
+  // A row the browser renders needs no preparing, and its observers can be believed.
+  const isSkipped = useCallback((now = false) => {
+    if (now || skippedRef.current === null)
+      skippedRef.current =
+        trackRef.current?.checkVisibility?.({ contentVisibilityAuto: true }) === false;
+    return skippedRef.current;
+  }, []);
   const readPos = (el: HTMLDivElement) => {
     const pos = rtl ? -el.scrollLeft : el.scrollLeft;
     lastScrollPosRef.current = pos;
@@ -566,6 +672,19 @@ export function Row({
       observedWidthRef.current = rect.width;
       scheduleMeasure();
     });
+    let settleTimer: number | undefined;
+    const stopShellResize =
+      shellRef.current &&
+      observeResize(shellRef.current, (rect) => {
+        if (rect.width <= 0) return;
+        if (Math.abs(rect.width - shellWidthRef.current) < 0.5) return;
+        shellWidthRef.current = rect.width;
+        window.clearTimeout(settleTimer);
+        // On screen the container measures. The other rows follow once the width has settled.
+        if (cellWidthRef.current !== null)
+          settleTimer = window.setTimeout(scheduleMeasure, RESIZE_SETTLE_MS);
+        else if (nearRef.current) scheduleMeasure();
+      });
     let trackWidth = 0;
     const stopTrackResize = observeResize(track, (rect) => {
       if (rect.width <= 0) return;
@@ -640,6 +759,8 @@ export function Row({
     window.addEventListener("harbor:reset-row-scrolls", onReset);
     return () => {
       stopContainerResize();
+      stopShellResize?.();
+      window.clearTimeout(settleTimer);
       stopTrackResize();
       if (resetRaf != null) cancelAnimationFrame(resetRaf);
       track.removeEventListener("scroll", onScroll);
@@ -864,6 +985,7 @@ export function Row({
     }
   };
 
+  let nextColumn = 0;
   const trackPad = dockEnabled ? "pb-8 pt-14 -mb-8 -mt-14" : "py-5 -my-5 px-2 -mx-2 scroll-px-2";
   const hasHeader = !!(title || onViewAll || headerRight);
   const shellRoom = hasHeader ? "" : dockEnabled ? "py-14 -my-14" : "py-5 -my-5";
@@ -967,6 +1089,8 @@ export function Row({
                 ? (child.props as { style?: { gridColumn?: string } }).style?.gridColumn
                 : undefined;
               const spanCount = columnSpan(span);
+              const column = nextColumn;
+              nextColumn += spanCount;
               const baseWidth = (cellWidth ?? effMin) * spanCount + GAP * (spanCount - 1);
               const expanded = expandedCard?.index === i;
               const desiredExpandedWidth =
@@ -985,6 +1109,12 @@ export function Row({
                 <LazyChild
                   eager={alwaysActive}
                   active={alwaysActive || near}
+                  measured={cellWidth !== null}
+                  column={column}
+                  columns={spanCount}
+                  shownWidth={shownWidth}
+                  isSkipped={isSkipped}
+                  rowOnScreen={onScreenRef}
                   shape={effShape}
                   span={span}
                   expansion={

@@ -6,7 +6,7 @@ export type SearchState = {
   open: boolean;
   query: string;
   results: SearchResults | null;
-  // Keep pending addon slots separate so results remain null until a source answers.
+  // Keep pending addon slots separate so results remain null until there is something to show.
   addonQueries: AddonQuery[];
   status: "idle" | "typing" | "loading" | "done";
   recent: string[];

@@ -44,7 +44,7 @@ import { useExitPresence } from "@/lib/use-exit-presence";
 import { useWindowFullscreen } from "@/lib/use-window-fullscreen";
 import { isMagnetInput, isDirectVideoUrl } from "@/lib/torrent/magnet";
 import { useProfiles } from "@/lib/profiles";
-import { useInstallFeatures } from "@/lib/features/install";
+import { useInstallFeatures, useInstallFeaturesReady } from "@/lib/features/install";
 import { steamStoreQuery } from "@/lib/games/steam-store-search";
 const SteamStoreSearch = lazy(() =>
   import("./steam-store-search").then((module) => ({ default: module.SteamStoreSearch })),
@@ -79,7 +79,10 @@ export function SearchOverlay() {
   const [mediaFilter, setMediaFilter] = useState<SearchFilter>("all");
   const { activeProfile } = useProfiles();
   const { settings, update } = useSettings();
-  const gamesEnabled = useInstallFeatures().games;
+  const installFeatures = useInstallFeatures();
+  const installFeaturesReady = useInstallFeaturesReady();
+  const gamesEnabled = installFeaturesReady && installFeatures.games;
+  const musicEnabled = installFeaturesReady && installFeatures.music;
   const storeQuery =
     activeProfile?.kid || !gamesEnabled
       ? null
@@ -120,7 +123,8 @@ export function SearchOverlay() {
 
   const close = () => {
     backdropGesture.current?.();
-    if (query.trim() && (results || storeQuery !== null)) recordRecent(query);
+    if (query.trim() && (results || status === "loading" || storeQuery !== null))
+      recordRecent(query);
     setOpen(false);
   };
 
@@ -510,11 +514,15 @@ export function SearchOverlay() {
                   commit();
                   openPerson(id);
                 }}
-                onOpenMusic={(q) => {
-                  commit();
-                  requestMusicSearch(q);
-                  setView("music");
-                }}
+                onOpenMusic={
+                  musicEnabled
+                    ? (q) => {
+                        commit();
+                        requestMusicSearch(q);
+                        setView("music");
+                      }
+                    : undefined
+                }
               />
             ) : (
               <>

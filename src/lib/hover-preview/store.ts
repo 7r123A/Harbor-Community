@@ -1,5 +1,5 @@
 import type { Meta } from "../cinemeta";
-import { isScrollActive } from "../scroll-activity";
+import { isPageMoving } from "../scroll-activity";
 import { createDismissListeners } from "./dismiss-listeners";
 import { assemblePreviewData, type PreviewArt, type PreviewAssembly } from "./preview-data";
 import {
@@ -274,7 +274,7 @@ export function hoverPreviewEnter(meta: Meta, el: HTMLElement, buttons = 0): voi
   // a dwell: the pointer did not move, the page did. Starting the intent fetch
   // here assembled preview data for a card that was out of view a moment later,
   // so ignore enters that arrive during an active scroll.
-  if (isScrollActive()) return;
+  if (isPageMoving()) return;
   if (open) {
     if (el === open.el) {
       insideAnchor = true;

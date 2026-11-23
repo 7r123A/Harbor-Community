@@ -24,7 +24,7 @@ function runThemeCleanup(key: "__harborCustomCleanup" | "__harborThemeCleanup") 
 
 export function CustomCodeMount() {
   const { settings } = useSettings();
-  const { player } = useView();
+  const { player, topKind } = useView();
   const [themesTick, setThemesTick] = useState(0);
 
   useEffect(() => subscribeCustomThemes(() => setThemesTick((t) => t + 1)), []);
@@ -44,6 +44,26 @@ export function CustomCodeMount() {
     }
     return payload;
   }, [settings.theme.preset, themesTick]);
+
+  const html = `${settings.customHtml ?? ""}${themeExt?.html ?? ""}`;
+  const themeJs = themeExt?.js ?? "";
+  // The theme with HTML or a script that is active. Without one, the markup is the user's own.
+  const codeOwner = themeExt?.html || themeJs ? settings.theme.preset : null;
+  const script = codeOwner ? themeJs : settings.customJs;
+  // React assigns innerHTML again whenever this object is a new one, even for an unchanged string.
+  // Keeping it stable leaves the theme's nodes, their state and their listeners in place. Another
+  // theme and a new script start on new nodes even for the same HTML: the old ones carry what the
+  // last script left.
+  const overlayHtml = useMemo(() => ({ __html: html }), [html, codeOwner, script]);
+
+  // Markup that was just swapped in has no mark for the current view yet, and the view did not
+  // change. Declared before the script effects, so a script finds the mark when it starts.
+  useEffect(() => {
+    const overlay = document.getElementById(OVERLAY_ID);
+    overlay?.querySelectorAll("[data-harbor-nav]").forEach((el) => {
+      el.toggleAttribute("data-active", el.getAttribute("data-harbor-nav") === topKind);
+    });
+  }, [overlayHtml, topKind]);
 
   useEffect(() => {
     if (typeof document === "undefined") return;
@@ -82,9 +102,10 @@ export function CustomCodeMount() {
     return () => runThemeCleanup("__harborCustomCleanup");
   }, [settings.customJs]);
 
+  // Another theme with the very same script starts it again, because its nodes are new.
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const code = (themeExt?.js ?? "").trim();
+    const code = themeJs.trim();
     if (!code) return;
     try {
       new Function(code)();
@@ -92,15 +113,14 @@ export function CustomCodeMount() {
       console.warn("[harbor-theme-js] error:", err);
     }
     return () => runThemeCleanup("__harborThemeCleanup");
-  }, [themeExt?.js]);
+  }, [themeJs, codeOwner]);
 
-  const html = `${settings.customHtml ?? ""}${themeExt?.html ?? ""}`;
   return (
     <div
       id={OVERLAY_ID}
       aria-hidden
       className={`pointer-events-none fixed inset-0 z-[100] ${player ? "hidden" : ""}`}
-      dangerouslySetInnerHTML={{ __html: html }}
+      dangerouslySetInnerHTML={overlayHtml}
     />
   );
 }

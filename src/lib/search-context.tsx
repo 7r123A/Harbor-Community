@@ -25,6 +25,7 @@ import {
   type AddonQuery,
 } from "@/lib/search-addons";
 import { searchAddonIndex } from "@/lib/search-addon-index";
+import { getSearchDisplayState } from "@/lib/search-display-state";
 import { settleSearchSource } from "@/lib/search-request-guard";
 import { normalizeSearchQuery } from "@/lib/search-query";
 import { orderedMetadataAddons } from "@/lib/metadata-addons";
@@ -47,6 +48,7 @@ import { anilistCharacterSearch, type CharacterHit } from "@/lib/anilist/charact
 import { gatherCatalogAddons, type Addon } from "@/lib/addons";
 import { useAuth } from "@/lib/auth";
 import { useSettings } from "@/lib/settings";
+import { useInstallFeatures, useInstallFeaturesReady } from "@/lib/features/install";
 import { usePlaylists } from "@/lib/iptv/playlists-store";
 import { isMagnetInput, isDirectVideoUrl } from "@/lib/torrent/magnet";
 import { useView, type Frame } from "@/lib/view";
@@ -189,6 +191,13 @@ function saveRecent(items: string[]): void {
 
 export function SearchProvider({ children }: { children: ReactNode }) {
   const { settings } = useSettings();
+  const installFeatures = useInstallFeatures();
+  // Until the native answer is here the store reports every component as installed. An optional
+  // source is not asked before that, so no query is sent for a component that was left out.
+  const installFeaturesReady = useInstallFeaturesReady();
+  const mangaAllowed = settings.mangaEnabled && installFeaturesReady && installFeatures.manga;
+  const musicAllowed = installFeaturesReady && installFeatures.music;
+  const ebookAllowed = installFeaturesReady && installFeatures.ebook;
   const playlists = usePlaylists();
   const { authKey } = useAuth();
   const { hiddenTabs } = useParental();
@@ -246,7 +255,6 @@ export function SearchProvider({ children }: { children: ReactNode }) {
     setAddonQueries([]);
     setStatus("typing");
     const animeAllowed = !hiddenTabs.anime && !settings.hideContent.anime;
-    const mangaAllowed = settings.mangaEnabled;
     const franchiseAllowed = animeAllowed || mangaAllowed;
     const liveTvAllowed = !hiddenTabs.liveTv && playlists.length > 0;
     const controller = new AbortController();
@@ -318,11 +326,12 @@ export function SearchProvider({ children }: { children: ReactNode }) {
       const mangaPromise: Promise<MangaSummary[]> = mangaAllowed
         ? guard(searchManga(trimmed), [])
         : Promise.resolve([]);
-      const musicPromise: Promise<MusicSearchHit[]> = guard(
-        searchTyped(trimmed, 10).then(toMusicHits),
-        [],
-      );
-      const ebookPromise: Promise<EBook[]> = guard(searchEBooks(trimmed), []);
+      const musicPromise: Promise<MusicSearchHit[]> = musicAllowed
+        ? guard(searchTyped(trimmed, 10).then(toMusicHits), [])
+        : Promise.resolve([]);
+      const ebookPromise: Promise<EBook[]> = ebookAllowed
+        ? guard(searchEBooks(trimmed), [])
+        : Promise.resolve([]);
       const sportsPromise: Promise<SportsEventHit[]> = guard(
         searchSportsEvents(trimmed, signal),
         [],
@@ -349,10 +358,9 @@ export function SearchProvider({ children }: { children: ReactNode }) {
             // the 8s outer guard resolves [] and would wipe visible groups; addon slots
             // arrive only through this stream, so there is nothing for it to wipe.
             //
-            // Its own setState, never publish(). publish() writes `results`, and the
-            // pending burst fires before any source has answered, so routing this
-            // through it turned `results` non-null with nothing in it and killed the
-            // desktop overlay's loading skeleton.
+            // Its own setState, never publish(). The pending burst fires before any source
+            // has answered, and publish() leaves `results` null until there is something to
+            // show, for the sake of the desktop overlay's loading skeleton.
             (q) => {
               if (signal.aborted) return;
               const metas = settings.hideContent.anime
@@ -390,6 +398,7 @@ export function SearchProvider({ children }: { children: ReactNode }) {
         cine: { movies: [], series: [] } as Awaited<typeof cinemetaPromise>,
         groups: [] as Awaited<typeof addonGroupsPromise>,
       };
+      let settled = false;
       const publish = () => {
         if (signal.aborted) return;
         const base: SearchResults = tmdbResult ?? {
@@ -474,7 +483,7 @@ export function SearchProvider({ children }: { children: ReactNode }) {
           exactAnimeTop && !sameSearchTitle(configuredTop?.meta.name, trimmed)
             ? exactAnimeTop
             : configuredTop;
-        setResults({
+        const next: SearchResults = {
           ...base,
           topMatch:
             settings.hideContent.anime && topMatch && metaLooksAnime(topMatch.meta)
@@ -491,7 +500,12 @@ export function SearchProvider({ children }: { children: ReactNode }) {
           characters: acc.characters,
           addonGroups: dedupedGroups,
           addons: searchAddonIndex(trimmed),
-        });
+        };
+        // The first result takes the loading rows off the screen, so while lookups are pending it
+        // has to have something to show. A source that is not queried answers before all others.
+        const { hasResults, tmdbUnavailable } = getSearchDisplayState(next, trimmed, "loading");
+        if (!settled && !hasResults && !tmdbUnavailable && !next.intent) return;
+        setResults(next);
       };
       void tmdbPromise.then((r) => {
         tmdbResult = r;
@@ -552,6 +566,7 @@ export function SearchProvider({ children }: { children: ReactNode }) {
         addonGroupsPromise,
       ]).then(() => {
         if (signal.aborted) return;
+        settled = true;
         publish();
         setStatus("done");
       });
@@ -577,7 +592,9 @@ export function SearchProvider({ children }: { children: ReactNode }) {
     hiddenTabs.anime,
     settings.hideContent.anime,
     hiddenTabs.liveTv,
-    settings.mangaEnabled,
+    mangaAllowed,
+    musicAllowed,
+    ebookAllowed,
     authKey,
   ]);
 

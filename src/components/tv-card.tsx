@@ -200,8 +200,8 @@ export const TvCard = memo(function TvCard({
 function useAnimeBackdrop(meta: Meta): string | undefined {
   const { settings } = useSettings();
   const isAnime = isTvCardAnimeId(meta.id);
-  // The title and the fields the lookup reads, as the poster card's expanding artwork keys it. A
-  // rebuilt list hands the same title down as a new object, and that must not drop the artwork.
+  // The title and its artwork, as the poster card's expanding artwork keys it. A rebuilt list hands
+  // the same title down as a new object, and that must not drop the artwork.
   const key = expandingCardArtworkKey(meta, settings.tmdbKey);
   const [backdrop, setBackdrop] = useState<{ key: string; url?: string }>(() => ({
     key,
@@ -212,25 +212,28 @@ function useAnimeBackdrop(meta: Meta): string | undefined {
       return;
     }
     let cancelled = false;
+    // Returning the previous object skips the render when the lookup finds what is already shown.
+    const show = (url: string) =>
+      setBackdrop((shown) => (shown.key === key && shown.url === url ? shown : { key, url }));
     const resolve = async () => {
       await ensureStaticHeroArt().catch(() => {});
       if (cancelled) return;
       const staticBg = peekStaticHeroArt(meta.id, animeArtworkKind(meta))?.bg;
       if (staticBg) {
-        setBackdrop({ key, url: staticBg });
+        show(staticBg);
         return;
       }
       const url = await prepareExpandingCardArtwork(meta, settings.tmdbKey).catch(() => undefined);
-      if (!cancelled) setBackdrop({ key, url: url && url !== meta.poster ? url : undefined });
+      // A miss sets nothing: it must not take away what an earlier lookup found for this title.
+      if (!cancelled && url && url !== meta.poster) show(url);
     };
     void resolve();
     return () => {
       cancelled = true;
     };
-    // `meta` is left out on purpose: the lookups are keyed by `key`, and a new object for the same
-    // title must not run them again.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, isAnime, settings.tmdbKey]);
+    // `meta` and not only `key`: the lookup also reads the name, the year and the MAL id, and
+    // artwork can arrive after a miss, so a rebuilt row looks again.
+  }, [meta, key, isAnime, settings.tmdbKey]);
   // Reused cards must not display the previous title while its replacement resolves.
   return isAnime && backdrop.key === key ? backdrop.url : undefined;
 }

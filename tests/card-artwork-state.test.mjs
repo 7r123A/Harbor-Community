@@ -24,13 +24,20 @@ function hooks() {
   const effects = [];
   let cursor = 0;
   let pending = [];
+  let stateChanges = 0;
   return {
     react: {
       memo: (component) => component,
       useState(initial) {
         const index = cursor++;
         if (!(index in state)) state[index] = typeof initial === "function" ? initial() : initial;
-        return [state[index], (value) => (state[index] = value)];
+        const set = (value) => {
+          const next = typeof value === "function" ? value(state[index]) : value;
+          // As in React: only another value renders the component again.
+          if (!Object.is(next, state[index])) stateChanges += 1;
+          state[index] = next;
+        };
+        return [state[index], set];
       },
       useEffect(effect, deps) {
         const index = cursor++;
@@ -50,6 +57,7 @@ function hooks() {
       pending = [];
       jobs.forEach((job) => job());
     },
+    stateChanges: () => stateChanges,
   };
 }
 const jsx = (type, props) => ({ type, props });
@@ -65,7 +73,7 @@ const meta = (id, extra = {}) => ({
   ...extra,
 });
 
-function artworkFixture() {
+function artworkFixture(lookup) {
   const h = hooks();
   const cached = new Map();
   const pending = new Map();
@@ -85,10 +93,11 @@ function artworkFixture() {
       ensureStaticHeroArt: async () => {},
     },
     "@/lib/expanding-card-artwork": {
-      // As in production: the title and the fields the lookup reads, never the object itself.
+      // As in production: never the object itself, nor the name and year the lookup also reads.
       expandingCardArtworkKey: (m, tmdbKey) =>
         [m.id, m.type, m.animeFormat, tmdbKey, m.background, m.poster].join("|"),
-      prepareExpandingCardArtwork: (m) => new Promise((resolve) => pending.set(m.id, resolve)),
+      prepareExpandingCardArtwork:
+        lookup ?? ((m) => new Promise((resolve) => pending.set(m.id, resolve))),
     },
   });
   return {
@@ -110,6 +119,13 @@ function artworkFixture() {
           inLocalLibrary: false,
         },
       }).props.children[0].props;
+    },
+    // The picture on the card once its effect and the lookup have finished.
+    async settle(m) {
+      this.image(m);
+      h.flush();
+      await tick();
+      return this.image(m).src;
     },
   };
 }
@@ -171,6 +187,48 @@ test("the same title handed down as a new object keeps its cached artwork", () =
   f.cached.set(a.id, { bg: "a-wide" });
   assert.equal(f.image(a).src, "a-wide");
   assert.equal(f.image({ ...a }).src, "a-wide");
+});
+
+test("artwork that arrives after a miss is picked up when the row is rebuilt", async () => {
+  const f = artworkFixture(async () => undefined);
+  const a = meta("kitsu:1");
+  assert.equal(await f.settle(a), a.poster);
+  // The background refresh of the static artwork adds the title.
+  f.cached.set(a.id, { bg: "a-wide" });
+  assert.equal(await f.settle({ ...a }), "a-wide");
+});
+
+test("a miss is looked up again with the metadata of the rebuilt row", async () => {
+  const f = artworkFixture(async (m) => (m.releaseInfo === "2024" ? "a-wide" : undefined));
+  const a = meta("kitsu:1");
+  assert.equal(await f.settle(a), a.poster);
+  assert.equal(await f.settle({ ...a, releaseInfo: "2024" }), "a-wide");
+});
+
+test("a lookup that finds nothing new does not render the card again", async () => {
+  for (const found of ["a-wide", undefined]) {
+    const f = artworkFixture(async () => found);
+    const a = meta("kitsu:1");
+    const shown = await f.settle(a);
+    const before = f.stateChanges();
+    assert.equal(await f.settle({ ...a }), shown);
+    assert.equal(f.stateChanges(), before, `lookup result: ${found}`);
+  }
+});
+
+test("a later miss does not take away the artwork the title already shows", async () => {
+  let online = true;
+  const f = artworkFixture(async () => (online ? "a-wide" : undefined));
+  const a = meta("kitsu:1");
+  assert.equal(await f.settle(a), "a-wide");
+  online = false;
+  assert.equal(await f.settle({ ...a }), "a-wide");
+});
+
+test("a reused card shows artwork it shares with the preceding title", async () => {
+  const f = artworkFixture(async () => "franchise-wide");
+  assert.equal(await f.settle(meta("kitsu:1")), "franchise-wide");
+  assert.equal(await f.settle(meta("kitsu:2")), "franchise-wide");
 });
 
 test("a failed backdrop falls back but does not suppress a replacement URL", () => {

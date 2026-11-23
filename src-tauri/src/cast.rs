@@ -821,9 +821,13 @@ fn load_converts(
                 || auto_remux)
 }
 
-/// The source's picture size as the player reports it; a height of 0 or none means it does not know.
+/// Only a complete picture size can bypass probing. A release name may provide "1080p" without
+/// the actual width (a 2560x1080 film, for example), so a height alone cannot prove it fits.
 fn known_picture(width: Option<u32>, height: Option<u32>) -> Option<(u32, u32)> {
-    height.filter(|h| *h > 0).map(|h| (width.unwrap_or(0), h))
+    match (width, height) {
+        (Some(w), Some(h)) if w > 0 && h > 0 => Some((w, h)),
+        _ => None,
+    }
 }
 
 /// The size a direct load is judged by: what the player knows of the source, else what probing it
@@ -1978,13 +1982,17 @@ mod pause_state_tests {
         // The player reports no size: the probe's decides.
         assert_eq!(known_picture(None, None), None);
         assert_eq!(known_picture(Some(1920), Some(0)), None, "a height of 0 is not a size");
+        assert_eq!(known_picture(None, Some(1080)), None, "a named height cannot establish the width");
+        assert_eq!(known_picture(Some(0), Some(1080)), None, "zero width is still unknown");
+        assert_eq!(known_picture(Some(1920), None), None, "a width without height is incomplete");
+        assert_eq!(known_picture(Some(1920), Some(1080)), Some((1920, 1080)));
         let probed = source_picture(None, Some(&full_hd));
         assert_eq!(probed, Some((1920, 1080)));
         assert!(probed.is_some_and(|(w, h)| at("720p").picture_beyond_quality(w, h)), "1080p is beyond 720p");
         assert!(!probed.is_some_and(|(w, h)| at("1080p-hq").picture_beyond_quality(w, h)), "it fits 1080p");
         // What the player knows comes first, so a source confirmed to fit is never probed.
         assert_eq!(source_picture(Some((1280, 720)), Some(&full_hd)), Some((1280, 720)));
-        assert_eq!(known_picture(None, Some(720)), Some((0, 720)), "a release name gives a height only");
+        assert_eq!(known_picture(None, Some(720)), None, "a release name gives a height, not a full size");
         // Wider than a receiver of that height decodes counts too.
         assert!(at("1080p").picture_beyond_quality(2560, 1080));
         assert!(!at("4k").picture_beyond_quality(4096, 2160));
@@ -2018,7 +2026,7 @@ mod pause_state_tests {
                 .is_ok_and(|s| s.success());
             made.then(|| path.to_string_lossy().into_owned())
         };
-        let (Some(full_hd), Some(hd)) = (make("1080.mp4", "1920x1080"), make("720.mp4", "1280x720")) else {
+        let (Some(full_hd), Some(hd), Some(wide)) = (make("1080.mp4", "1920x1080"), make("720.mp4", "1280x720"), make("wide.mp4", "2560x1080")) else {
             eprintln!("FFmpeg could not make the clips; skipped");
             let _ = std::fs::remove_dir_all(&dir);
             return;
@@ -2032,8 +2040,16 @@ mod pause_state_tests {
         // A source that fits stays direct.
         assert!(!quality_converts(&hd, &headers, &at("720p"), None).await.0);
         assert!(!quality_converts(&full_hd, &headers, &at("1080p"), None).await.0);
-        // A size the player knows decides without a probe.
-        let (convert, probe) = quality_converts(&full_hd, &headers, &at("720p"), Some((1280, 720))).await;
+        // Knowing only "1080p" from the release name must not hide an ultrawide source:
+        // at 2560x1080 it exceeds a 1080p receiver's 1920-pixel width limit.
+        let (convert, probe) = quality_converts(&wide, &headers, &at("1080p"), known_picture(None, Some(1080))).await;
+        assert!(convert, "a height-only 1080p label must not bypass the width limit");
+        assert_eq!(probe.and_then(|p| p.video).map(|v| (v.width, v.height)), Some((2560, 1080)));
+        // A height-only label is probed even when the actual source fits the limit.
+        let (convert, probe) = quality_converts(&hd, &headers, &at("720p"), known_picture(None, Some(720))).await;
+        assert!(!convert && probe.is_some(), "probing must preserve direct playback for a fitting source");
+        // A complete size the player knows still decides without a probe.
+        let (convert, probe) = quality_converts(&full_hd, &headers, &at("720p"), known_picture(Some(1280), Some(720))).await;
         assert!(!convert && probe.is_none());
         // A source nothing can read is handed over as before; "original" never probes.
         let missing = dir.join("missing.mp4").to_string_lossy().into_owned();

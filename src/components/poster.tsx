@@ -34,7 +34,7 @@ import {
   sizeImageUrl,
 } from "@/lib/img-size";
 import { shouldLocalizePosters } from "@/lib/providers/tmdb/tmdb-image-lang";
-import { useProxiedImageSrc } from "@/lib/remote-image-proxy";
+import { answeredFile, forgetAnsweredFile, useProxiedImageSrc } from "@/lib/remote-image-proxy";
 import { observeResize, observeWithin } from "@/lib/visibility";
 import { noteProbe, recordRenderCause } from "@/lib/render-cause";
 import { resolveRowScrollRoot, ScrollRootContext } from "./row";
@@ -485,15 +485,21 @@ function PosterBody({
   const displayedThumbWidth = nativePosterThumbnailWidth(displayed, posterWidth);
   // Remote plain-HTTP images (e.g. a Suwayomi server on a VPS) are mixed-content
   // blocked by the WebView; resolve them to a same-origin blob URL.
-  const currentSrc = useProxiedImageSrc(current, {
+  const canLoad = imageEnabled && (qMult === 0 || targetPx > 0);
+  const proxiedSrc = useProxiedImageSrc(current, {
     forceProxy:
       /^https?:\/\//.test(current ?? "") &&
       (!preferDirect || nativeRetryUrl === current || !current?.startsWith("https://")),
     persistent: true,
-    enabled: imageEnabled && (qMult === 0 || targetPx > 0),
+    enabled: canLoad,
     thumbWidthPx,
     originalSize: thumbWidthPx === undefined,
   });
+  // Rows and views take cards out of the page and build them again all the time. A picture that was
+  // shown before is there on the first paint. The cache is asked all the same, and its answer wins.
+  const [, reportStaleFile] = useReducer((n: number) => n + 1, 0);
+  const currentSrc =
+    proxiedSrc ?? (canLoad && current ? answeredFile(current, thumbWidthPx) : undefined);
   const displayedSrc = useProxiedImageSrc(displayed, {
     forceProxy:
       /^https?:\/\//.test(displayed ?? "") &&
@@ -671,7 +677,12 @@ function PosterBody({
           loading="eager"
           onLoad={() => markLoaded(current)}
           onError={() => {
-            if (
+            if (proxiedSrc === undefined) {
+              // The file from before is gone. Wait for the cache, as on a first visit.
+              forgetAnsweredFile(current, thumbWidthPx);
+              rootRef.current?.removeAttribute("data-loaded");
+              reportStaleFile();
+            } else if (
               preferDirect &&
               current.startsWith("https://") &&
               currentSrc === current &&

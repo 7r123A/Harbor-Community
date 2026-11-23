@@ -270,26 +270,20 @@ test("manga tracking does not subscribe when Manga is not installed", () => {
 });
 
 test("global search queries only the components this installation has", () => {
+  // search-lookups.test.mjs drives the gates themselves. This adds that the provider
+  // calls each optional lookup in that one place only.
   const search = read("src/lib/search-context.tsx");
-  assert.match(search, /const installFeatures = useInstallFeatures\(\);/);
-  assert.match(search, /const mangaAllowed = settings\.mangaEnabled && installFeatures\.manga;/);
-  assert.match(search, /const musicAllowed = installFeatures\.music;/);
-  assert.match(search, /const ebookAllowed = installFeatures\.ebook;/);
-  // Each lookup sits behind its gate, and the provider calls it nowhere else.
-  assert.match(search, /mangaAllowed\s*\?\s*guard\(\s*searchManga\(/);
-  assert.match(search, /musicAllowed\s*\?\s*guard\(\s*searchTyped\(/);
-  assert.match(search, /ebookAllowed\s*\?\s*guard\(\s*searchEBooks\(/);
   const code = search.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
   for (const lookup of ["searchManga", "searchTyped", "searchEBooks"])
     assert.equal(code.match(new RegExp(`\\b${lookup}\\(`, "g"))?.length, 1, lookup);
-  // A component that becomes known after the first render must restart the search effect.
-  for (const key of ["manga", "music", "ebook"])
-    assert.match(search, new RegExp(`\\binstallFeatures\\.${key},`));
 
-  // The person page inside search runs its own music lookup. The overlay hands it the music
-  // link only when Music is installed, and the page looks nothing up without that link.
+  // The overlay has two optional lookups of its own: the Steam shortcut, and the music of the
+  // person page. It hands that page the music link only when Music is installed, and the page
+  // looks nothing up without that link.
   const overlay = read("src/components/search/search-overlay.tsx");
-  assert.match(overlay, /onOpenMusic=\{\s*installFeatures\.music\s*\?\s*\(/);
+  assert.match(overlay, /const gamesEnabled = installFeaturesReady && installFeatures\.games;/);
+  assert.match(overlay, /const musicEnabled = installFeaturesReady && installFeatures\.music;/);
+  assert.match(overlay, /onOpenMusic=\{\s*musicEnabled\s*\?\s*\(/);
   assert.match(read("src/components/search/explore-pane.tsx"), /onOpenMusic=\{onOpenMusic\}/);
   const person = read("src/components/player/cast-modal/person-panel.tsx");
   assert.match(person, /const wantsMusic = !!onOpenMusic;/);
@@ -298,7 +292,10 @@ test("global search queries only the components this installation has", () => {
   // Big Picture pulses a slot only for a source that was queried, so its gate must match,
   // and what the gate is computed from must include the installation.
   const bigPicture = read("src/views/big-picture/use-bp-search.ts");
-  assert.match(bigPicture, /const mangaInstalled = useInstallFeatures\(\)\.manga;/);
+  assert.match(
+    bigPicture,
+    /const mangaInstalled = useInstallFeaturesReady\(\) && installFeatures\.manga;/,
+  );
   assert.match(bigPicture, /manga: settings\.mangaEnabled && mangaInstalled,/);
   const gateDependencies = bigPicture.match(/useMemo<BpSourceGates>\([^[]*\[([^\]]*)\]/)?.[1];
   assert.match(gateDependencies ?? "", /\bmangaInstalled\b/);

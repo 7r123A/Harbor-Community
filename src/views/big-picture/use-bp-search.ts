@@ -3,7 +3,7 @@ import type { Meta } from "@/lib/cinemeta";
 import { useSearch } from "@/lib/search-context";
 import { getSearchDisplayState } from "@/lib/search-display-state";
 import { useSettings } from "@/lib/settings";
-import { useInstallFeatures } from "@/lib/features/install";
+import { useInstallFeatures, useInstallFeaturesReady } from "@/lib/features/install";
 import { usePlaylists } from "@/lib/iptv/playlists-store";
 import { useParental } from "@/lib/parental";
 import { useUiLanguage } from "@/lib/i18n";
@@ -348,7 +348,8 @@ export function useBpSearch(filter: BpSearchFilter): BpSearchState {
   );
   const collections = useCollectionHits(query.trim());
   const { settings } = useSettings();
-  const mangaInstalled = useInstallFeatures().manga;
+  const installFeatures = useInstallFeatures();
+  const mangaInstalled = useInstallFeaturesReady() && installFeatures.manga;
   const playlists = usePlaylists();
   const { hiddenTabs } = useParental();
 

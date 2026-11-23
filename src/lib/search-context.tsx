@@ -47,7 +47,7 @@ import { anilistCharacterSearch, type CharacterHit } from "@/lib/anilist/charact
 import { gatherCatalogAddons, type Addon } from "@/lib/addons";
 import { useAuth } from "@/lib/auth";
 import { useSettings } from "@/lib/settings";
-import { useInstallFeatures } from "@/lib/features/install";
+import { useInstallFeatures, useInstallFeaturesReady } from "@/lib/features/install";
 import { usePlaylists } from "@/lib/iptv/playlists-store";
 import { isMagnetInput, isDirectVideoUrl } from "@/lib/torrent/magnet";
 import { useView, type Frame } from "@/lib/view";
@@ -191,6 +191,12 @@ function saveRecent(items: string[]): void {
 export function SearchProvider({ children }: { children: ReactNode }) {
   const { settings } = useSettings();
   const installFeatures = useInstallFeatures();
+  // Until the native answer is here the store reports every component as installed. An optional
+  // source is not asked before that, so no query is sent for a component that was left out.
+  const installFeaturesReady = useInstallFeaturesReady();
+  const mangaAllowed = settings.mangaEnabled && installFeaturesReady && installFeatures.manga;
+  const musicAllowed = installFeaturesReady && installFeatures.music;
+  const ebookAllowed = installFeaturesReady && installFeatures.ebook;
   const playlists = usePlaylists();
   const { authKey } = useAuth();
   const { hiddenTabs } = useParental();
@@ -248,9 +254,6 @@ export function SearchProvider({ children }: { children: ReactNode }) {
     setAddonQueries([]);
     setStatus("typing");
     const animeAllowed = !hiddenTabs.anime && !settings.hideContent.anime;
-    const mangaAllowed = settings.mangaEnabled && installFeatures.manga;
-    const musicAllowed = installFeatures.music;
-    const ebookAllowed = installFeatures.ebook;
     const franchiseAllowed = animeAllowed || mangaAllowed;
     const liveTvAllowed = !hiddenTabs.liveTv && playlists.length > 0;
     const controller = new AbortController();
@@ -582,10 +585,9 @@ export function SearchProvider({ children }: { children: ReactNode }) {
     hiddenTabs.anime,
     settings.hideContent.anime,
     hiddenTabs.liveTv,
-    settings.mangaEnabled,
-    installFeatures.manga,
-    installFeatures.music,
-    installFeatures.ebook,
+    mangaAllowed,
+    musicAllowed,
+    ebookAllowed,
     authKey,
   ]);
 

@@ -44,7 +44,7 @@ import { useExitPresence } from "@/lib/use-exit-presence";
 import { useWindowFullscreen } from "@/lib/use-window-fullscreen";
 import { isMagnetInput, isDirectVideoUrl } from "@/lib/torrent/magnet";
 import { useProfiles } from "@/lib/profiles";
-import { useInstallFeatures } from "@/lib/features/install";
+import { useInstallFeatures, useInstallFeaturesReady } from "@/lib/features/install";
 import { steamStoreQuery } from "@/lib/games/steam-store-search";
 const SteamStoreSearch = lazy(() =>
   import("./steam-store-search").then((module) => ({ default: module.SteamStoreSearch })),
@@ -80,7 +80,9 @@ export function SearchOverlay() {
   const { activeProfile } = useProfiles();
   const { settings, update } = useSettings();
   const installFeatures = useInstallFeatures();
-  const gamesEnabled = installFeatures.games;
+  const installFeaturesReady = useInstallFeaturesReady();
+  const gamesEnabled = installFeaturesReady && installFeatures.games;
+  const musicEnabled = installFeaturesReady && installFeatures.music;
   const storeQuery =
     activeProfile?.kid || !gamesEnabled
       ? null
@@ -512,7 +514,7 @@ export function SearchOverlay() {
                   openPerson(id);
                 }}
                 onOpenMusic={
-                  installFeatures.music
+                  musicEnabled
                     ? (q) => {
                         commit();
                         requestMusicSearch(q);

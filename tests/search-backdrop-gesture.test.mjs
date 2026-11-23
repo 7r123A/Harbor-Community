@@ -115,7 +115,10 @@ function harness(t, options = {}) {
     "@/lib/profiles": {
       useProfiles: () => ({ activeProfile: { id: "default", kid: false }, profiles: [] }),
     },
-    "@/lib/features/install": { useInstallFeatures: () => ({ games: false }) },
+    "@/lib/features/install": {
+      useInstallFeatures: () => ({ games: false }),
+      useInstallFeaturesReady: () => true,
+    },
     "@/lib/use-exit-presence": {
       useExitPresence: () => ({ mounted: search.open, closing: false }),
     },

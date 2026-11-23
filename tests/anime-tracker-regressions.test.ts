@@ -49,7 +49,7 @@ test("season switching remounts only the correct provider buttons without duplic
 
   // Pick the current native entry, rather than the initially opened series.
   assert.match(episodes, /const selectedCanonicalEntryId =/);
-  assert.match(episodes, /verifiedNativeOwner \?\? verifiedDisplayOwner/);
+  assert.match(episodes, /verifiedNativeOwner\s*\?\?\s*verifiedDisplayOwner/);
   assert.doesNotMatch(
     episodes,
     /premiereEntry\?\.id \?\? savedSeasonEntry\?\.id \?\? searchedSeasonId/,
@@ -65,7 +65,7 @@ test("season switching remounts only the correct provider buttons without duplic
     episodes,
     /verifiedSeasonOwnerFromEpisodes\(nativeSeason\?\.episodes \?\? \[\], imdbId, seasonHint\)/,
   );
-  assert.match(episodes, /requiresSeasonOwner \? null : displaySourceId/);
+  assert.match(episodes, /requiresSeasonOwner\s*\?\s*null\s*:\s*\(?displaySourceId/);
   assert.match(episodes, /onCanonicalEntry\?\.\(selectedCanonicalEntryId, requiresSeasonOwner\)/);
   assert.match(DETAIL, /onCanonicalEntry=\{onSeasonCanonicalEntry\}/);
   assert.match(DETAIL, /animeIdentity && animeTrackerId &&/);

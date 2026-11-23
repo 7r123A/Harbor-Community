@@ -1021,6 +1021,11 @@ async fn bind_lan_listener() -> Result<(TcpListener, u16), String> {
 }
 
 pub async fn start_lan_server(app: &AppHandle) -> Result<u16, String> {
+    // A sidecar of an older version can hold LAN_SERVER_PORT until setup's clean-up is over, and a
+    // fallback port bound before that is kept until the server restarts. Awaited ahead of the
+    // transition lock, which torrent playback needs too.
+    #[cfg(desktop)]
+    crate::cast_server::wait_for_legacy_cleanup().await;
     let _transition = lifecycle().lock().await;
     let session = match ensure_session_locked(app).await {
         Ok(s) => s,

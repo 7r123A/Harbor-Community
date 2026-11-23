@@ -261,3 +261,67 @@ test("manga is not asked with manga search switched off", async (t) => {
   await search.search("dune");
   assert.deepEqual(search.asked(), [...QUERIED_ALWAYS, "ebooks", "music"].sort());
 });
+
+test("the loading rows stay until there is something to show", async (t) => {
+  for (const [reason, installed, options] of [
+    ["eBooks left out", { ebook: false }, {}],
+    ["Music left out", { music: false }, {}],
+    ["Manga left out", { manga: false }, {}],
+    ["manga search off", {}, { settings: { mangaEnabled: false } }],
+    ["anime hidden", {}, { hiddenTabs: { anime: true } }],
+    ["anime hidden, no manga", { manga: false }, { hiddenTabs: { anime: true } }],
+    ["add-on metadata only", {}, { settings: { addonOnlyMetadata: true } }],
+    ["every source queried", {}, {}],
+  ]) {
+    await t.test(reason, async (t) => {
+      const search = await mountSearch(t, options);
+      await search.installation(installed);
+      await search.search("dune");
+      assert.equal(search.status(), "loading");
+      assert.ok(search.loadingRows(), "no queried source has answered yet");
+
+      await search.answer("sports");
+      assert.ok(search.loadingRows(), "one has, with nothing to show");
+
+      await search.answer("addons", DUNE);
+      assert.ok(!search.loadingRows());
+      assert.equal(search.results().movies[0].name, "Dune");
+    });
+  }
+});
+
+test("a search that finds nothing keeps the loading rows to the end", async (t) => {
+  const search = await mountSearch(t);
+  await search.installation({});
+  await search.search("dune");
+  for (const name of search.asked()) {
+    assert.ok(search.loadingRows(), `before ${name}`);
+    await search.answer(name);
+  }
+  assert.equal(search.status(), "done");
+  assert.deepEqual(search.results()?.movies, []);
+});
+
+test("everything the panel can show takes the place of the loading rows", async (t) => {
+  for (const [what, part] of [
+    ["intent", { intent: { kind: "year", year: 1984, label: "Movies from 1984" } }],
+    ["tmdbUnavailable", { tmdbUnavailable: true }],
+    ["people", { people: [{ id: 1, name: "Denis Villeneuve" }] }],
+  ]) {
+    await t.test(`TMDB's ${what}`, async (t) => {
+      const search = await mountSearch(t);
+      await search.installation({});
+      await search.search("dune");
+      await search.answer("tmdb", { ...NOTHING.tmdb, ...part });
+      assert.deepEqual(search.results()?.[what], part[what]);
+    });
+  }
+  await t.test("an add-on found by name", async (t) => {
+    const local = { id: "addon", name: "Dune Catalogue", installed: true };
+    const search = await mountSearch(t, { localAddons: [local] });
+    await search.installation({});
+    await search.search("dune");
+    await search.answer("sports");
+    assert.deepEqual(search.results()?.addons, [local]);
+  });
+});

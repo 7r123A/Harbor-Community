@@ -30,6 +30,7 @@ function harness(t, options = {}) {
   let fullscreen = options.fullscreen ?? false;
   let nativeFullscreen = options.nativeFullscreen ?? Promise.resolve(false);
   const calls = { closes: 0, drags: 0, fullscreenReads: 0 };
+  const recent = [];
   const search = {
     open: true,
     query: "",
@@ -40,7 +41,8 @@ function harness(t, options = {}) {
       search.open = value;
       if (!value) calls.closes++;
     },
-    recordRecent() {},
+    recordRecent: (query) => recent.push(query),
+    ...options.search,
   };
   const listeners = new Map();
   const win = new EventTarget();
@@ -191,6 +193,7 @@ function harness(t, options = {}) {
   render();
   return {
     calls,
+    recent,
     settings,
     render,
     unmount,
@@ -255,6 +258,18 @@ test("a backdrop click closes search, while right-clicks and child controls do n
   assert.equal(h.calls.closes, 1);
   assert.equal(h.calls.drags, 0);
   assert.equal(h.gestureListeners(), 0);
+});
+
+test("closing keeps the query as a recent search as soon as the search has started", (t) => {
+  for (const [status, kept] of [
+    ["typing", []],
+    ["loading", ["dune"]],
+  ]) {
+    const h = harness(t, { search: { query: "dune", status } });
+    h.down();
+    h.up();
+    assert.deepEqual(h.recent, kept, status);
+  }
 });
 
 test("native drag starts once after the threshold and does not dismiss search", async (t) => {

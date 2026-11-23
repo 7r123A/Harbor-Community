@@ -123,7 +123,8 @@ export function SearchOverlay() {
 
   const close = () => {
     backdropGesture.current?.();
-    if (query.trim() && (results || storeQuery !== null)) recordRecent(query);
+    if (query.trim() && (results || status === "loading" || storeQuery !== null))
+      recordRecent(query);
     setOpen(false);
   };
 

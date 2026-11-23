@@ -92,6 +92,7 @@ async function fixture(markup: string) {
     HTMLElement: dom.window.HTMLElement,
     HTMLImageElement: dom.window.HTMLImageElement,
     Element: dom.window.Element,
+    MutationObserver: dom.window.MutationObserver,
     IS_REACT_ACT_ENVIRONMENT: true,
   });
   dom.window.setInterval = (() => 0) as unknown as typeof dom.window.setInterval;

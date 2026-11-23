@@ -31,15 +31,17 @@ function load(file: string, dependencies: Record<string, unknown>) {
 }
 
 async function fixture(markup: string) {
-  const dom = new JSDOM(`<div id="look">${markup}</div><div id="root"></div>`, {
-    url: "https://fixture.invalid",
-  });
+  const dom = new JSDOM(
+    `<div id="look">${markup}</div><div id="harbor-custom-overlay"></div><div id="root"></div>`,
+    { url: "https://fixture.invalid" },
+  );
   Object.assign(globalThis, {
     window: dom.window,
     document: dom.window.document,
     HTMLElement: dom.window.HTMLElement,
     HTMLImageElement: dom.window.HTMLImageElement,
     Element: dom.window.Element,
+    MutationObserver: dom.window.MutationObserver,
     IS_REACT_ACT_ENVIRONMENT: true,
   });
   // The bridge rescans on a timer; the test runs those scans by hand.
@@ -47,7 +49,10 @@ async function fixture(markup: string) {
   dom.window.setInterval = ((fn: () => void) => scans.push(fn)) as typeof dom.window.setInterval;
   dom.window.clearInterval = (() => {}) as typeof dom.window.clearInterval;
 
-  const state = { settings: { theme: { preset: "user:one" }, customHtml: "", harborAvatar: null } };
+  const state = {
+    settings: { theme: { preset: "user:one" }, customHtml: "", harborAvatar: null },
+    preview: null as { layout: string } | null,
+  };
   const nothing = () => null;
   const { ThemeChromeBridge } = load("components/theme-chrome-bridge.tsx", {
     react: React,
@@ -71,7 +76,7 @@ async function fixture(markup: string) {
     "@/lib/theme": { activeLayout: () => "custom" },
     "@/lib/theme-markup-calls": { runBlockedHarborCall: () => false },
     "@/chrome/use-big-picture-entry": { useBigPictureEntry: () => ({ offer: true }) },
-    "@/lib/theme-preview": { useThemePreview: () => null },
+    "@/lib/theme-preview": { useThemePreview: () => state.preview },
   }) as { ThemeChromeBridge: React.ComponentType };
 
   const root = createRoot(document.getElementById("root")!);
@@ -81,6 +86,12 @@ async function fixture(markup: string) {
     state,
     render,
     look: document.getElementById("look")!,
+    overlay: document.getElementById("harbor-custom-overlay")!,
+    // Runs a change of the page and lets the page's observers see it. No scan, no render.
+    change: (edit: () => void) =>
+      React.act(async () => {
+        edit();
+      }),
     flagged: () => document.documentElement.hasAttribute(FLAG),
     scan: () => React.act(() => scans.forEach((run) => run())),
     async close() {
@@ -135,6 +146,91 @@ test("a control a theme script adds or removes later is picked up by the next sc
     f.look.querySelector("nav")!.innerHTML = "";
     await f.scan();
     assert.equal(f.flagged(), false);
+  } finally {
+    await f.close();
+  }
+});
+
+test("the flag follows the active theme's markup at once while the preset stays", async () => {
+  const f = await fixture("");
+  try {
+    // A store update of the active theme: new markup, the same preset.
+    await f.change(() => {
+      f.overlay.innerHTML = `<nav><div>${SLOT}</div></nav>`;
+    });
+    assert.equal(f.flagged(), true);
+    await f.change(() => {
+      f.overlay.innerHTML = "<nav><button id='home'>Home</button></nav>";
+    });
+    assert.equal(f.flagged(), false);
+
+    // A theme script: it hooks a button it has, gives that up again, and adds one of its own.
+    const home = document.getElementById("home")!;
+    await f.change(() => home.setAttribute("data-harbor-bigpicture", ""));
+    assert.equal(f.flagged(), true);
+    await f.change(() => home.removeAttribute("data-harbor-bigpicture"));
+    assert.equal(f.flagged(), false);
+    await f.change(() => home.insertAdjacentHTML("afterend", SLOT));
+    assert.equal(f.flagged(), true);
+
+    // A script that takes its bar out of the overlay still supplies the control.
+    await f.change(() => document.body.append(f.overlay.firstElementChild!));
+    assert.equal(f.flagged(), true);
+  } finally {
+    await f.close();
+  }
+});
+
+test("the flag follows the draft in the Theme Studio at once", async () => {
+  const f = await fixture("");
+  try {
+    const draft = document.createElement("div");
+    draft.id = "harbor-studio-preview-html";
+    draft.innerHTML = SLOT;
+    document.body.append(draft);
+    f.state.preview = { layout: "custom" };
+    await f.render();
+    assert.equal(f.flagged(), true, "the Studio opens on a draft with the control");
+
+    await f.change(() => {
+      draft.innerHTML = "<nav></nav>";
+    });
+    assert.equal(f.flagged(), false);
+    await f.change(() => {
+      draft.innerHTML = SLOT;
+    });
+    assert.equal(f.flagged(), true);
+
+    draft.remove();
+    f.state.preview = null;
+    await f.render();
+    assert.equal(f.flagged(), false, "the Studio is closed without saving");
+  } finally {
+    await f.close();
+  }
+});
+
+test("theme markup that changes all the time does not make the bridge search the page", async () => {
+  const f = await fixture("");
+  try {
+    await f.change(() => {
+      f.overlay.innerHTML = `<span id="clock"></span><ul id="list"></ul>${SLOT}`;
+    });
+    let searches = 0;
+    const search = document.querySelectorAll.bind(document);
+    document.querySelectorAll = ((selector: string) => {
+      searches += 1;
+      return search(selector);
+    }) as typeof document.querySelectorAll;
+    for (let i = 0; i < 20; i += 1) {
+      await f.change(() => {
+        document.getElementById("clock")!.textContent = String(i);
+        document.getElementById("list")!.innerHTML = `<li><b>${i}</b></li>`;
+        f.overlay.firstElementChild!.setAttribute("style", `width: ${i}px`);
+      });
+    }
+    assert.equal(searches, 0);
+    assert.equal(f.flagged(), true);
   } finally {
     await f.close();
   }

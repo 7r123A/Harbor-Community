@@ -20,6 +20,7 @@ import { useBpT } from "./bp-i18n";
 import { HarborMark } from "@/components/icons/harbor-mark";
 import { useHarborLogo } from "@/lib/harbor-logo";
 import { goBigPictureTab, type BigPictureTabKind } from "@/lib/big-picture";
+import type { NavItemId } from "@/chrome/nav-items";
 
 function useClock(): string {
   const [now, setNow] = useState(() => new Date());
@@ -36,6 +37,10 @@ type BpTab = {
   icon: (active: boolean) => React.ReactNode;
   hiddenByAnime?: boolean;
   parentalKey?: LockableTab;
+  // The desktop nav item this tab mirrors, so hiding it there hides it here.
+  // Home, Search and Settings have none on purpose: Home is where Big Picture
+  // lands and Settings is the only way back out of a bad setup on a TV.
+  navId?: NavItemId;
 };
 
 const TABS: BpTab[] = [
@@ -44,6 +49,7 @@ const TABS: BpTab[] = [
     kind: "discover",
     label: "Discover",
     icon: () => <NavGlyph name="explore" className="h-[26px] w-[26px] p-[2px]" />,
+    navId: "discover",
   },
   {
     kind: "anime",
@@ -51,13 +57,21 @@ const TABS: BpTab[] = [
     icon: (a) => <AnimeIcon active={a} />,
     hiddenByAnime: true,
     parentalKey: "anime",
+    navId: "anime",
   },
-  { kind: "shows", label: "Shows", icon: (a) => <TvIcon active={a} />, parentalKey: "shows" },
+  {
+    kind: "shows",
+    label: "Shows",
+    icon: (a) => <TvIcon active={a} />,
+    parentalKey: "shows",
+    navId: "shows",
+  },
   {
     kind: "movies",
     label: "Movies",
     icon: (a) => <MoviesIcon active={a} />,
     parentalKey: "movies",
+    navId: "movies",
   },
   // Deliberately not gated on hasLive. A TV-only viewer has never seen the
   // desktop app, so hiding the tab until a playlist exists hid the only route to
@@ -66,12 +80,14 @@ const TABS: BpTab[] = [
     kind: "live",
     label: "Live TV",
     icon: () => <NavGlyph name="livetv" className="h-[26px] w-[26px] p-[2px]" />,
+    navId: "live",
   },
   {
     kind: "sports",
     label: "Sports",
     icon: () => <NavGlyph name="sports" className="h-[26px] w-[26px] p-[2px]" />,
     parentalKey: "sports",
+    navId: "sports",
   },
   {
     kind: "search",
@@ -83,6 +99,7 @@ const TABS: BpTab[] = [
     label: "Library",
     icon: (a) => <LibraryIcon active={a} />,
     parentalKey: "library",
+    navId: "library",
   },
   // Ungated for the same reason as Live TV: it needs a TMDB key, and hiding it
   // until there is one hid the only place that explains how to add one.
@@ -90,6 +107,7 @@ const TABS: BpTab[] = [
     kind: "collections",
     label: "Collections",
     icon: () => <NavGlyph name="collections" className="h-[26px] w-[26px] p-[2px]" />,
+    navId: "collections",
   },
   { kind: "settings", label: "Settings", icon: (a) => <SettingsIcon active={a} /> },
 ];
@@ -99,6 +117,7 @@ export type BpTabGate = {
   sportsDeclined: boolean;
   locked: boolean;
   hiddenTabs: HiddenTabs;
+  navHidden: readonly string[];
 };
 
 // The tab strip and the shoulder cycle both read this, so a tab can never be
@@ -107,6 +126,7 @@ export function useBpTabGate(): BpTabGate {
   const { settings } = useSettings();
   const { locked, hiddenTabs } = useParental();
   const animeHidden = Boolean(settings.hideContent.anime);
+  const navHidden = settings.navCustomization.hidden;
   const consent = useSyncExternalStore(
     subscribeSportsConsent,
     getSportsConsentSnapshot,
@@ -114,8 +134,8 @@ export function useBpTabGate(): BpTabGate {
   );
   const sportsDeclined = consent.status === "declined";
   return useMemo(
-    () => ({ animeHidden, sportsDeclined, locked, hiddenTabs }),
-    [animeHidden, sportsDeclined, locked, hiddenTabs],
+    () => ({ animeHidden, sportsDeclined, locked, hiddenTabs, navHidden }),
+    [animeHidden, sportsDeclined, locked, hiddenTabs, navHidden],
   );
 }
 
@@ -124,6 +144,7 @@ function visibleTabs(gate: BpTabGate): BpTab[] {
     if (tab.hiddenByAnime && gate.animeHidden) return false;
     if (tab.kind === "sports" && gate.sportsDeclined) return false;
     if (gate.locked && tab.parentalKey && gate.hiddenTabs[tab.parentalKey]) return false;
+    if (tab.navId && gate.navHidden.includes(tab.navId)) return false;
     return true;
   });
 }

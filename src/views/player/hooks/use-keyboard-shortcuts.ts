@@ -17,6 +17,7 @@ import { tracePlayback } from "@/lib/player/pause-trace";
 import { round2 } from "../player-utils";
 import { slowSpeedToggleRate, stepPlaybackRate } from "@/lib/seek-step";
 import { SFX } from "@/lib/sfx";
+import { dismissChatHistory } from "@/lib/together/chat-history-dismiss";
 
 export function useKeyboardShortcuts(params: {
   bridgeRef: RefObject<PlayerBridge | null>;
@@ -224,6 +225,10 @@ export function useKeyboardShortcuts(params: {
         if (getLeaveConfirm().open) return;
         if (drawMode) {
           setDrawMode(false);
+          return;
+        }
+        if (dismissChatHistory()) {
+          e.preventDefault();
           return;
         }
         if (returnToPreview) {

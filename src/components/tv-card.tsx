@@ -8,7 +8,7 @@ import { useViewActions } from "@/lib/view";
 import { usePosterChain } from "@/components/poster";
 import { animeArtworkKind } from "@/lib/providers/anime-format";
 import { ensureStaticHeroArt, peekStaticHeroArt } from "@/lib/providers/anime-hero-art-static";
-import { prepareExpandingCardArtwork } from "@/lib/expanding-card-artwork";
+import { expandingCardArtworkKey, prepareExpandingCardArtwork } from "@/lib/expanding-card-artwork";
 import { ScoreStack, type CardBadge } from "@/components/card-score-stack";
 import { useTmdbImdbId } from "@/lib/providers/tmdb";
 import {
@@ -200,8 +200,11 @@ export const TvCard = memo(function TvCard({
 function useAnimeBackdrop(meta: Meta): string | undefined {
   const { settings } = useSettings();
   const isAnime = isTvCardAnimeId(meta.id);
-  const [backdrop, setBackdrop] = useState<{ meta: Meta; url?: string }>(() => ({
-    meta,
+  // The title and its artwork, as the poster card's expanding artwork keys it. A rebuilt list hands
+  // the same title down as a new object, and that must not drop the artwork.
+  const key = expandingCardArtworkKey(meta, settings.tmdbKey);
+  const [backdrop, setBackdrop] = useState<{ key: string; url?: string }>(() => ({
+    key,
     url: isAnime ? peekStaticHeroArt(meta.id, animeArtworkKind(meta))?.bg : undefined,
   }));
   useEffect(() => {
@@ -209,24 +212,30 @@ function useAnimeBackdrop(meta: Meta): string | undefined {
       return;
     }
     let cancelled = false;
+    // Returning the previous object skips the render when the lookup finds what is already shown.
+    const show = (url: string) =>
+      setBackdrop((shown) => (shown.key === key && shown.url === url ? shown : { key, url }));
     const resolve = async () => {
       await ensureStaticHeroArt().catch(() => {});
       if (cancelled) return;
       const staticBg = peekStaticHeroArt(meta.id, animeArtworkKind(meta))?.bg;
       if (staticBg) {
-        setBackdrop({ meta, url: staticBg });
+        show(staticBg);
         return;
       }
       const url = await prepareExpandingCardArtwork(meta, settings.tmdbKey).catch(() => undefined);
-      if (!cancelled) setBackdrop({ meta, url: url && url !== meta.poster ? url : undefined });
+      // A miss sets nothing: it must not take away what an earlier lookup found for this title.
+      if (!cancelled && url && url !== meta.poster) show(url);
     };
     void resolve();
     return () => {
       cancelled = true;
     };
-  }, [meta, isAnime, settings.tmdbKey]);
+    // `meta` and not only `key`: the lookup also reads the name, the year and the MAL id, and
+    // artwork can arrive after a miss, so a rebuilt row looks again.
+  }, [meta, key, isAnime, settings.tmdbKey]);
   // Reused cards must not display the previous title while its replacement resolves.
-  return isAnime && backdrop.meta === meta ? backdrop.url : undefined;
+  return isAnime && backdrop.key === key ? backdrop.url : undefined;
 }
 
 export function TvCardArtwork({

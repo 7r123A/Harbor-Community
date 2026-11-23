@@ -26,6 +26,9 @@ const sync: Record<string, string> = {
   "Every collection": "Toutes les collections",
   "First anchor": "Premier point d’ancrage",
   "Guests pick their own source": "Les invités choisissent leur propre source",
+  "Chat history": "Historique du chat",
+  "Keep chat history open": "Garder l'historique du chat ouvert",
+  "Shows earlier messages over the video": "Affiche les messages précédents sur la vidéo",
   "Harbor's public relay has not rolled out the latest protocol yet.":
     "Le relais public de Harbor ne prend pas encore en charge le dernier protocole.",
   "Invite link": "Lien d’invitation",

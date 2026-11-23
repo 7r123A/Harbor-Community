@@ -317,6 +317,7 @@ export type Settings = {
   togetherCfDeployed: boolean;
   togetherShareCursors: boolean;
   togetherGuestsPick: boolean;
+  togetherChatHistoryOpen: boolean;
   discordRichPresence: boolean;
   discordHideTitle: boolean;
   discordShowWhenPaused: boolean;

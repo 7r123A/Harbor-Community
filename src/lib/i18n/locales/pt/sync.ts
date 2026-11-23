@@ -25,6 +25,9 @@ const sync: Record<string, string> = {
   Message: "Mensagem",
   Send: "Enviar",
   "Guests pick their own source": "Convidados escolhem sua própria fonte",
+  "Chat history": "Histórico do chat",
+  "Keep chat history open": "Manter o histórico do chat aberto",
+  "Shows earlier messages over the video": "Mostra as mensagens anteriores sobre o vídeo",
   "Prompts guests to choose instead of auto-matching":
     "Pede que os convidados escolham em vez de corresponder automaticamente",
   "Harbor's public relay has not rolled out the latest protocol yet.":

@@ -151,10 +151,16 @@ export function nativeSeasonRows(
   return visibleEpisodes.map((ep) => {
     if ((ep.imdbSeason ?? ep.seasonNumber) !== seasonHint) return ep;
     const native = byCoordinate.get(ep.imdbEpisode ?? ep.number);
-    return native && (!ep.imdbId || !native.imdbId || ep.imdbId === native.imdbId) ? native : ep;
+    if (!native || (ep.imdbId && native.imdbId && ep.imdbId !== native.imdbId)) return ep;
+    // Keep the selected provider row's presentation coordinates while taking
+    // playback, metadata and watched identity from its canonical native row.
+    return {
+      ...native,
+      displayNumber: ep.displayNumber,
+      displaySeason: ep.displaySeason,
+    };
   });
 }
-
 
 /** Only an episode that names this exact IMDb show and provider season
  * can authorize a tracker status / airing-timer owner. A saved or searched
@@ -164,12 +170,20 @@ export function verifiedSeasonOwnerFromEpisodes(
   imdbId: string | null | undefined,
   season: number | null,
 ): string | null {
-  if (!imdbId || !/^tt[1-9]\d*$/.test(imdbId) ||
-      !Number.isInteger(season) || season == null || season < 1) return null;
-  const owners = new Set(rows
-    .filter((row) => row.imdbId === imdbId && row.imdbSeason === season)
-    .map((row) => row.sourceMetaId)
-    .filter((id): id is string => !!id && /^(?:kitsu|mal|anilist|anidb):[1-9]\d*$/.test(id)));
+  if (
+    !imdbId ||
+    !/^tt[1-9]\d*$/.test(imdbId) ||
+    !Number.isInteger(season) ||
+    season == null ||
+    season < 1
+  )
+    return null;
+  const owners = new Set(
+    rows
+      .filter((row) => row.imdbId === imdbId && row.imdbSeason === season)
+      .map((row) => row.sourceMetaId)
+      .filter((id): id is string => !!id && /^(?:kitsu|mal|anilist|anidb):[1-9]\d*$/.test(id)),
+  );
   return owners.size === 1 ? [...owners][0] : null;
 }
 
@@ -189,6 +203,8 @@ export function nativeSeasonOwnerId(
 ): string | null {
   if (!native || native.page !== page || native.season !== season || !native.episodes.length)
     return null;
-  const ids = new Set(native.episodes.map((ep) => ep.sourceMetaId).filter((id): id is string => !!id));
+  const ids = new Set(
+    native.episodes.map((ep) => ep.sourceMetaId).filter((id): id is string => !!id),
+  );
   return ids.size === 1 ? [...ids][0] : null;
 }

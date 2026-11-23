@@ -33,6 +33,9 @@ const social: Record<string, string> = {
     "AniList bağlantısı kesilsin mi? Yeniden bağlanana kadar listeleriniz Anime sayfasında gösterilmeyecek.",
   "First anchor": "İlk referans noktası",
   "Guests pick their own source": "Konuklar kendi kaynaklarını seçsin",
+  "Chat history": "Sohbet geçmişi",
+  "Keep chat history open": "Sohbet geçmişini açık tut",
+  "Shows earlier messages over the video": "Önceki mesajları videonun üzerinde gösterir",
   Guided: "Yönlendirmeli",
   "Harbor's public relay has not rolled out the latest protocol yet.":
     "Harbor'ın herkese açık aktarıcısına en son protokol henüz dağıtılmadı.",

@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState, type RefObject } from "react";
+import { memo, useContext, useEffect, useRef, useState, type RefObject } from "react";
 import type { Meta } from "@/lib/cinemeta";
 import { peekCachedLogo, resolveLogo } from "@/lib/logo";
 import { sizeImageUrl } from "@/lib/img-size";
@@ -6,6 +6,7 @@ import { useContextMenu, type MembershipContext } from "@/lib/context-menu";
 import { useSettings } from "@/lib/settings";
 import { useViewActions } from "@/lib/view";
 import { usePosterChain } from "@/components/poster";
+import { RowCardWidthContext } from "./row";
 import { animeArtworkKind } from "@/lib/providers/anime-format";
 import { ensureStaticHeroArt, peekStaticHeroArt } from "@/lib/providers/anime-hero-art-static";
 import { expandingCardArtworkKey, prepareExpandingCardArtwork } from "@/lib/expanding-card-artwork";
@@ -99,6 +100,8 @@ export const TvCard = memo(function TvCard({
   const { openMeta, openManga } = useViewActions();
   const { open: openContextMenu } = useContextMenu();
   const cardRef = useRef<HTMLButtonElement>(null);
+  // A card its row shows is built before that row is on screen. Lazy loading would wait until it is.
+  const shownByRow = useContext(RowCardWidthContext) !== null;
   const { settings } = useSettings();
   const cardSettings = { ...settings, ...settings.tvCardOptions };
   const logo = useLogo(meta);
@@ -189,6 +192,7 @@ export const TvCard = memo(function TvCard({
             sharedState={sharedCardState}
             isAnime={isAnimeCardId}
             cardRef={cardRef}
+            imageLoading={shownByRow ? "eager" : "lazy"}
           />
         </span>
       </button>
@@ -254,6 +258,7 @@ export function TvCardArtwork({
   sharedState,
   isAnime = false,
   cardRef,
+  imageLoading = "lazy",
 }: {
   meta: Meta;
   awardLookupName?: string;
@@ -270,6 +275,7 @@ export function TvCardArtwork({
   sharedState: CardSharedState;
   isAnime?: boolean;
   cardRef?: RefObject<HTMLElement | null>;
+  imageLoading?: "eager" | "lazy";
 }) {
   const { settings } = useSettings();
   const card = cardSettings ?? { ...settings, ...settings.tvCardOptions };
@@ -339,7 +345,7 @@ export function TvCardArtwork({
           src={sizeImageUrl(wide, 640)}
           alt=""
           draggable={false}
-          loading="lazy"
+          loading={imageLoading}
           onError={() => setFailedBackdrop(wide)}
           className="absolute inset-0 h-full w-full object-cover"
         />
@@ -349,7 +355,7 @@ export function TvCardArtwork({
           onError={onPosterError}
           alt=""
           draggable={false}
-          loading="lazy"
+          loading={imageLoading}
           className="absolute inset-0 h-full w-full scale-110 object-cover blur-[18px] saturate-[1.2]"
         />
       )}
@@ -383,7 +389,7 @@ export function TvCardArtwork({
                   src={logo}
                   alt={meta.name}
                   draggable={false}
-                  loading="lazy"
+                  loading={imageLoading}
                   onLoad={(event) => {
                     const { naturalWidth, naturalHeight } = event.currentTarget;
                     const ratio = naturalHeight > 0 ? naturalWidth / naturalHeight : Infinity;

@@ -34,7 +34,7 @@ import {
   sizeImageUrl,
 } from "@/lib/img-size";
 import { shouldLocalizePosters } from "@/lib/providers/tmdb/tmdb-image-lang";
-import { useProxiedImageSrc } from "@/lib/remote-image-proxy";
+import { answeredFile, forgetAnsweredFile, useProxiedImageSrc } from "@/lib/remote-image-proxy";
 import { observeResize, observeWithin } from "@/lib/visibility";
 import { noteProbe, recordRenderCause } from "@/lib/render-cause";
 import { resolveRowScrollRoot, ScrollRootContext } from "./row";
@@ -306,6 +306,13 @@ const RATIO_AR: Record<Ratio, number> = {
   square: 1,
 };
 
+// Capped at 2. An Android TV WebView reports devicePixelRatio 4 because it is
+// describing the 4K panel, while the window it rasterises is 1920x1080, so the
+// raw value asks for a bucket twice as wide and four times the pixels.
+function imageWidthFor(cssWidth: number, qMult: number): number {
+  return Math.ceil(cssWidth * Math.min(2, window.devicePixelRatio || 1) * qMult);
+}
+
 function PosterBody({
   src,
   seed,
@@ -316,6 +323,7 @@ function PosterBody({
   lazy = false,
   preferDirect = false,
   fallbacks,
+  cardWidth,
 }: {
   src?: string;
   seed: string;
@@ -328,6 +336,8 @@ function PosterBody({
   /** For public browse-grid covers, try HTTPS img loading before the native proxy. */
   preferDirect?: boolean;
   fallbacks?: Array<string | null | undefined>;
+  /** Width of the card when the row it is in shows it. The image then waits for no observer. */
+  cardWidth?: number;
 }) {
   const { settings } = useSettings();
   const renderCauseRef = useRef<{
@@ -353,12 +363,15 @@ function PosterBody({
   const effect = settings.posterEffect;
   const pageScrollRoot = useContext(ScrollRootContext);
   const rootRef = useRef<HTMLDivElement | null>(null);
-  const [imageEnabled, setImageEnabled] = useState(!lazy);
-  const imageEnabledRef = useRef(!lazy);
-  const [targetPx, setTargetPx] = useState(0);
-  const targetPxRef = useRef(0);
-  const measuredPxRef = useRef(0);
+  // A row tells its width only to a card it is about to show, and while the browser skips the row no
+  // observer reports.
+  const startEnabled = !lazy || cardWidth !== undefined;
+  const [imageEnabled, setImageEnabled] = useState(startEnabled);
+  const imageEnabledRef = useRef(startEnabled);
   const qMult = qualityMultiplier(settings.posterQuality);
+  const [targetPx, setTargetPx] = useState(() => imageWidthFor(cardWidth ?? 0, qMult));
+  const targetPxRef = useRef(targetPx);
+  const measuredPxRef = useRef(0);
   const rawCandidates = [src, ...(fallbacks ?? [])].filter((u): u is string => !!u);
   const rawCandidatesRef = useRef(rawCandidates);
   rawCandidatesRef.current = rawCandidates;
@@ -386,10 +399,7 @@ function PosterBody({
     return observeResize(el, (box) => {
       if (box.width <= 0) return;
       const need = Math.max(box.width, box.height * RATIO_AR[ratio]);
-      // Capped at 2. An Android TV WebView reports devicePixelRatio 4 because it is
-      // describing the 4K panel, while the window it rasterises is 1920x1080, so the
-      // raw value asks for a bucket twice as wide and four times the pixels.
-      const t = Math.ceil(need * Math.min(2, window.devicePixelRatio || 1) * qMult);
+      const t = imageWidthFor(need, qMult);
       measuredPxRef.current = t;
       const prev = targetPxRef.current;
       if (t <= prev) return;
@@ -475,15 +485,21 @@ function PosterBody({
   const displayedThumbWidth = nativePosterThumbnailWidth(displayed, posterWidth);
   // Remote plain-HTTP images (e.g. a Suwayomi server on a VPS) are mixed-content
   // blocked by the WebView; resolve them to a same-origin blob URL.
-  const currentSrc = useProxiedImageSrc(current, {
+  const canLoad = imageEnabled && (qMult === 0 || targetPx > 0);
+  const proxiedSrc = useProxiedImageSrc(current, {
     forceProxy:
       /^https?:\/\//.test(current ?? "") &&
       (!preferDirect || nativeRetryUrl === current || !current?.startsWith("https://")),
     persistent: true,
-    enabled: imageEnabled && (qMult === 0 || targetPx > 0),
+    enabled: canLoad,
     thumbWidthPx,
     originalSize: thumbWidthPx === undefined,
   });
+  // Rows and views take cards out of the page and build them again all the time. A picture that was
+  // shown before is there on the first paint. The cache is asked all the same, and its answer wins.
+  const [, reportStaleFile] = useReducer((n: number) => n + 1, 0);
+  const currentSrc =
+    proxiedSrc ?? (canLoad && current ? answeredFile(current, thumbWidthPx) : undefined);
   const displayedSrc = useProxiedImageSrc(displayed, {
     forceProxy:
       /^https?:\/\//.test(displayed ?? "") &&
@@ -661,7 +677,12 @@ function PosterBody({
           loading="eager"
           onLoad={() => markLoaded(current)}
           onError={() => {
-            if (
+            if (proxiedSrc === undefined) {
+              // The file from before is gone. Wait for the cache, as on a first visit.
+              forgetAnsweredFile(current, thumbWidthPx);
+              rootRef.current?.removeAttribute("data-loaded");
+              reportStaleFile();
+            } else if (
               preferDirect &&
               current.startsWith("https://") &&
               currentSrc === current &&

@@ -1824,6 +1824,12 @@ function targetForSnap(el: HTMLElement, snap: ScrollSnapshot, allowFallback = tr
   return snap.fallback >= 0 ? snap.fallback : null;
 }
 
+// A page that opens at a saved position scrolls by itself at first: the position is put back, and the
+// browser keeps its anchor while rows replace their placeholders. Counted as a gesture, that would
+// hold the new page's cards back to one per frame.
+const OPENING_MS = 1000;
+const SCROLL_INPUT = ["wheel", "pointerdown", "touchstart"] as const;
+
 export function useScrollMemory(
   key: string,
   ref: RefObject<HTMLElement | null>,
@@ -1857,6 +1863,7 @@ export function useScrollMemory(
     // A fresh page or a saved top position needs no layout read during the commit.
     const initialHeight = initialSnap && !startsAtTop ? el.clientHeight : undefined;
     let restoring = initialSnap != null;
+    let gesturesFrom = restoring && !startsAtTop ? performance.now() + OPENING_MS : 0;
     let following = followLayout && restoring && !startsAtTop;
     const previousOverflowAnchor = following ? el.style.overflowAnchor : "";
     let followSettleId: number | undefined;
@@ -1924,6 +1931,7 @@ export function useScrollMemory(
     };
 
     const cancelFollow = () => {
+      gesturesFrom = 0;
       stopFollowing();
       restoring = false;
       cancelSettle();
@@ -2038,8 +2046,13 @@ export function useScrollMemory(
       saveNow();
     };
 
+    const endOpening = () => {
+      gesturesFrom = 0;
+      window.removeEventListener("keydown", endOpening, true);
+    };
+
     const onScroll = () => {
-      noteScrollActivity();
+      noteScrollActivity(performance.now() >= gesturesFrom);
       if (restoring || parked) return;
       lastScrollAt = performance.now();
       saveTimer ??= window.setTimeout(saveAfterScroll, 200);
@@ -2052,6 +2065,11 @@ export function useScrollMemory(
     const ro = new ResizeObserver(onResize);
     ro.observe(el);
     if (el.firstElementChild) ro.observe(el.firstElementChild);
+    if (gesturesFrom > 0) {
+      for (const type of SCROLL_INPUT) el.addEventListener(type, endOpening, { passive: true });
+      // A page that follows its layout listens for keys already.
+      if (!following) window.addEventListener("keydown", endOpening, true);
+    }
     if (following) {
       // Let sections replace their loading placeholders without WebView picking
       // a different scroll anchor. Release the viewport on input or after layout settles.
@@ -2084,6 +2102,8 @@ export function useScrollMemory(
       reveal();
       ro.disconnect();
       el.removeEventListener("scroll", onScroll);
+      for (const type of SCROLL_INPUT) el.removeEventListener(type, endOpening);
+      endOpening();
     };
   }, [
     active,

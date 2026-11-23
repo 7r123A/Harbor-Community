@@ -88,6 +88,25 @@ const POSTER_PREFIX = "season-poster:v1:";
 const POSTER_TTL = 7 * 24 * 60 * 60_000;
 let legacyPosterKeys: Promise<Set<string>> | undefined;
 let cacheGeneration = 0;
+// What the native cache answered this session. A card that is built again can show that file while
+// the cache is asked once more.
+const ANSWERED_FILES_MAX = 4000;
+const answeredFiles = new Map<string, string>();
+
+export function answeredFile(url: string, thumbWidthPx?: number): string | undefined {
+  return answeredFiles.get(cacheKeyFor(url, thumbWidthPx));
+}
+
+export function forgetAnsweredFile(url: string, thumbWidthPx?: number): void {
+  answeredFiles.delete(cacheKeyFor(url, thumbWidthPx));
+}
+
+function rememberAnsweredFile(key: string, src: string): void {
+  answeredFiles.delete(key);
+  answeredFiles.set(key, src);
+  while (answeredFiles.size > ANSWERED_FILES_MAX)
+    answeredFiles.delete(answeredFiles.keys().next().value!);
+}
 
 function getLegacyPosterKeys(): Promise<Set<string>> {
   // Most installs have no legacy entries. Check the key index once without
@@ -102,6 +121,7 @@ export async function clearThumbCache(): Promise<void> {
   blobCache.clear();
   inflight.clear();
   deadUrls.clear();
+  answeredFiles.clear();
   const keys = await getLegacyPosterKeys();
   await Promise.all([...keys].map(idbCacheDelete));
   keys.clear();
@@ -338,6 +358,7 @@ export function useProxiedImageSrc(
     void proxyImage(url, thumbWidthPx, persistent, migrateLegacy).then((created) => {
       if (!alive || generation !== cacheGeneration) return;
       if (typeof created === "string") {
+        rememberAnsweredFile(imageKey, created);
         setBlob({ key: imageKey, src: created });
         return;
       }

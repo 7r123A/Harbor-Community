@@ -25,7 +25,12 @@ function load(path: string, mocks: Record<string, unknown>, globals: Record<stri
   return exports;
 }
 
-const torrent = load("src/lib/torrent/stremio-stream.ts", { "@/lib/stremio-server": {} });
+const torrent = load("src/lib/torrent/stremio-stream.ts", {
+  "@/lib/stremio-server": {},
+  // Stream URL resolution does not need settings; the other P2P tests verify
+  // that active-profile settings control torrent availability.
+  "@/lib/settings/profile-store": { readActiveSettingsRaw: () => null },
+});
 
 function fixture(
   options: {

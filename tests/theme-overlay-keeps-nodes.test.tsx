@@ -48,6 +48,9 @@ async function fixture(looks: Look[]) {
     topKind: "home",
   };
   const libraryListeners = new Set<() => void>();
+  // Look scripts note here what they heard.
+  const heard: string[] = [];
+  Object.assign(dom.window, { heard });
   const { CustomCodeMount } = load("components/custom-code-mount.tsx", {
     react: React,
     "react/jsx-runtime": jsxRuntime,
@@ -72,6 +75,11 @@ async function fixture(looks: Look[]) {
     overlay,
     // What a store update of a saved theme does: same id, new content, subscribers told.
     libraryChanged: () => React.act(() => libraryListeners.forEach((listener) => listener())),
+    heard,
+    switchTo(id: string) {
+      state.settings = { ...state.settings, theme: { preset: id } };
+      return render();
+    },
     highlighted: () =>
       [...overlay().querySelectorAll("[data-harbor-nav][data-active]")].map((el) =>
         el.getAttribute("data-harbor-nav"),
@@ -222,6 +230,127 @@ test("the overlay is hidden, not rebuilt, while the player is open", async () =>
     await f.render();
     assert.ok(!f.overlay().classList.contains("hidden"));
     assert.equal(f.overlay().firstElementChild, node);
+  } finally {
+    await f.close();
+  }
+});
+
+// Two things a look's script can do with the look's own nodes: listen on them, or take them out of
+// the overlay and remove them again when it ends.
+const listens = (name: string) => `
+  document
+    .querySelector('#look-rail [data-harbor-nav="home"]')
+    .addEventListener("click", () => window.heard.push("${name}"));`;
+const movesRail = (version: string) => `
+  const rail = document.querySelector("#harbor-custom-overlay #look-rail");
+  if (rail) document.body.append(rail);
+  window.__harborThemeCleanup = () => rail?.remove(); // ${version}`;
+
+const homeButton = () =>
+  document.querySelector<HTMLElement>('#look-rail [data-harbor-nav="home"]')!;
+const railParents = () =>
+  [...document.querySelectorAll("#look-rail")].map((el) => el.parentElement!.tagName);
+
+test("another look starts on new nodes even when its HTML is the same", async () => {
+  // A look and a saved copy of it, without the script.
+  const f = await fixture([
+    { ...rail(), id: "user:first", js: listens("first") },
+    { ...rail(), id: "user:copy" },
+  ]);
+  try {
+    const overlay = f.overlay();
+    const before = homeButton();
+    before.click();
+    assert.deepEqual(f.heard, ["first"]);
+
+    await f.switchTo("user:copy");
+    homeButton().click();
+    assert.deepEqual(f.heard, ["first"], "the first look's listener must be gone");
+    assert.notEqual(homeButton(), before, "the button must be a new node");
+    assert.deepEqual(f.highlighted(), ["home"]);
+    assert.equal(f.overlay(), overlay, "the overlay itself stays: the chrome bridge holds it");
+  } finally {
+    await f.close();
+  }
+});
+
+test("another look with the same HTML and the same script has it running on its new nodes", async () => {
+  // A copy saved with other colors only.
+  const js = `${listens("click")}
+    window.__harborThemeCleanup = () => window.heard.push("cleanup");`;
+  const f = await fixture([
+    { ...rail(), id: "user:first", js },
+    { ...rail(), id: "user:copy", css: ":root { --color-accent: #e05; }", js },
+  ]);
+  try {
+    const before = homeButton();
+    await f.switchTo("user:copy");
+    assert.notEqual(homeButton(), before);
+    homeButton().click();
+    assert.deepEqual(f.heard, ["cleanup", "click"], "the first run ended, the second listens once");
+  } finally {
+    await f.close();
+  }
+});
+
+test("another look with the same HTML has its nodes when the last look's script took them along", async () => {
+  const f = await fixture([
+    { ...rail(), id: "user:first", js: movesRail("first") },
+    { ...rail(), id: "user:copy", js: movesRail("copy") },
+  ]);
+  try {
+    assert.deepEqual(railParents(), ["BODY"]);
+    await f.switchTo("user:copy");
+    assert.deepEqual(railParents(), ["BODY"], "one rail, the one the second script took");
+  } finally {
+    await f.close();
+  }
+});
+
+test("another look without a script starts on new nodes too", async () => {
+  // Two saved versions of one chrome from the Theme Studio, in different colors.
+  const f = await fixture([
+    { ...rail(), id: "user:first" },
+    { ...rail(), id: "user:copy", css: ":root { --color-accent: #e05; }" },
+  ]);
+  try {
+    homeButton().setAttribute("data-left-behind", "");
+    await f.switchTo("user:copy");
+    assert.ok(!homeButton().hasAttribute("data-left-behind"));
+  } finally {
+    await f.close();
+  }
+});
+
+test("another look that is only a script starts it even when it is the same script", async () => {
+  const js = `
+    window.heard.push("start");
+    window.__harborThemeCleanup = () => window.heard.push("end");`;
+  const f = await fixture([
+    { id: "user:first", css: "", js, html: "" },
+    { id: "user:copy", css: "", js, html: "" },
+  ]);
+  try {
+    await f.switchTo("user:copy");
+    assert.deepEqual(f.heard, ["start", "end", "start"]);
+  } finally {
+    await f.close();
+  }
+});
+
+test("the user's own HTML stays in place while looks without HTML and script are switched", async () => {
+  const plain = (id: string): Look => ({ id, css: ".look { color: red; }", js: "", html: "" });
+  const f = await fixture([plain("cool-grey"), plain("noir")]);
+  try {
+    f.state.settings = { ...f.state.settings, customHtml: '<button id="own">Mine</button>' };
+    await f.render();
+    const own = document.getElementById("own");
+    assert.ok(own);
+    // "custom" is the user's own palette, which is no look from the library.
+    for (const id of ["noir", "custom", "cool-grey"]) {
+      await f.switchTo(id);
+      assert.equal(document.getElementById("own"), own, id);
+    }
   } finally {
     await f.close();
   }

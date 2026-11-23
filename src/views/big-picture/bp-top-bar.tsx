@@ -37,14 +37,24 @@ type BpTab = {
   icon: (active: boolean) => React.ReactNode;
   hiddenByAnime?: boolean;
   parentalKey?: LockableTab;
-  // The desktop nav item this tab mirrors, so hiding it there hides it here.
-  // Home, Search and Settings have none on purpose: Home is where Big Picture
-  // lands and Settings is the only way back out of a bad setup on a TV.
+  // The desktop nav item this tab mirrors: it is hidden here when hidden there,
+  // and it takes the same place in the desktop order.
   navId?: NavItemId;
+  // Never hidden by the desktop navigation. Home is where Big Picture lands and
+  // Settings is the only way back out of a bad setup on a TV. Search has no
+  // desktop item, so it follows Library's position instead.
+  alwaysShown?: boolean;
 };
 
+// Default order matches the desktop navigation: Movies and Shows before Anime.
 const TABS: BpTab[] = [
-  { kind: "home", label: "Home", icon: (a) => <HomeIcon active={a} /> },
+  {
+    kind: "home",
+    label: "Home",
+    icon: (a) => <HomeIcon active={a} />,
+    navId: "home",
+    alwaysShown: true,
+  },
   {
     kind: "discover",
     label: "Discover",
@@ -52,12 +62,11 @@ const TABS: BpTab[] = [
     navId: "discover",
   },
   {
-    kind: "anime",
-    label: "Anime",
-    icon: (a) => <AnimeIcon active={a} />,
-    hiddenByAnime: true,
-    parentalKey: "anime",
-    navId: "anime",
+    kind: "movies",
+    label: "Movies",
+    icon: (a) => <MoviesIcon active={a} />,
+    parentalKey: "movies",
+    navId: "movies",
   },
   {
     kind: "shows",
@@ -67,11 +76,12 @@ const TABS: BpTab[] = [
     navId: "shows",
   },
   {
-    kind: "movies",
-    label: "Movies",
-    icon: (a) => <MoviesIcon active={a} />,
-    parentalKey: "movies",
-    navId: "movies",
+    kind: "anime",
+    label: "Anime",
+    icon: (a) => <AnimeIcon active={a} />,
+    hiddenByAnime: true,
+    parentalKey: "anime",
+    navId: "anime",
   },
   // Deliberately not gated on hasLive. A TV-only viewer has never seen the
   // desktop app, so hiding the tab until a playlist exists hid the only route to
@@ -93,6 +103,7 @@ const TABS: BpTab[] = [
     kind: "search",
     label: "Search",
     icon: () => <NavGlyph name="search" className="h-[26px] w-[26px] p-[2px]" />,
+    alwaysShown: true,
   },
   {
     kind: "library",
@@ -109,7 +120,12 @@ const TABS: BpTab[] = [
     icon: () => <NavGlyph name="collections" className="h-[26px] w-[26px] p-[2px]" />,
     navId: "collections",
   },
-  { kind: "settings", label: "Settings", icon: (a) => <SettingsIcon active={a} /> },
+  {
+    kind: "settings",
+    label: "Settings",
+    icon: (a) => <SettingsIcon active={a} />,
+    alwaysShown: true,
+  },
 ];
 
 export type BpTabGate = {
@@ -118,6 +134,7 @@ export type BpTabGate = {
   locked: boolean;
   hiddenTabs: HiddenTabs;
   navHidden: readonly string[];
+  navOrder: readonly string[];
 };
 
 // The tab strip and the shoulder cycle both read this, so a tab can never be
@@ -127,6 +144,7 @@ export function useBpTabGate(): BpTabGate {
   const { locked, hiddenTabs } = useParental();
   const animeHidden = Boolean(settings.hideContent.anime);
   const navHidden = settings.navCustomization.hidden;
+  const navOrder = settings.navCustomization.order;
   const consent = useSyncExternalStore(
     subscribeSportsConsent,
     getSportsConsentSnapshot,
@@ -134,19 +152,33 @@ export function useBpTabGate(): BpTabGate {
   );
   const sportsDeclined = consent.status === "declined";
   return useMemo(
-    () => ({ animeHidden, sportsDeclined, locked, hiddenTabs, navHidden }),
-    [animeHidden, sportsDeclined, locked, hiddenTabs, navHidden],
+    () => ({ animeHidden, sportsDeclined, locked, hiddenTabs, navHidden, navOrder }),
+    [animeHidden, sportsDeclined, locked, hiddenTabs, navHidden, navOrder],
   );
 }
 
+// Position of a tab in the desktop order. Search has no desktop item and sits
+// just before Library. A tab the saved order does not list keeps its default
+// place after the listed ones, so an old or partial order never loses a tab.
+function orderRank(tab: BpTab, order: readonly string[], fallback: number): number {
+  const at = order.indexOf(tab.kind === "search" ? "library" : (tab.navId ?? ""));
+  if (at < 0) return order.length + fallback;
+  return tab.kind === "search" ? at - 0.5 : at;
+}
+
 function visibleTabs(gate: BpTabGate): BpTab[] {
-  return TABS.filter((tab) => {
+  const shown = TABS.filter((tab) => {
     if (tab.hiddenByAnime && gate.animeHidden) return false;
     if (tab.kind === "sports" && gate.sportsDeclined) return false;
     if (gate.locked && tab.parentalKey && gate.hiddenTabs[tab.parentalKey]) return false;
-    if (tab.navId && gate.navHidden.includes(tab.navId)) return false;
+    if (tab.navId && !tab.alwaysShown && gate.navHidden.includes(tab.navId)) return false;
     return true;
   });
+  if (gate.navOrder.length === 0) return shown;
+  return shown
+    .map((tab, i) => ({ tab, rank: orderRank(tab, gate.navOrder, i) }))
+    .sort((a, b) => a.rank - b.rank)
+    .map((entry) => entry.tab);
 }
 
 export function bpTabKinds(gate: BpTabGate): BigPictureTabKind[] {
